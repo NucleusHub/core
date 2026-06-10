@@ -1,9 +1,12 @@
 <script setup>
-import { watch, onUnmounted, computed } from 'vue'
+import { ref, watch, onUnmounted, computed } from 'vue'
 import logoDark from './assets/nucleus-logo-transparent.png'
 import logoLight from './assets/nucleus-logo-light-1.png'
 import { useRegistry } from './useRegistry.js'
 import { useTheme } from './useTheme.js'
+import { useAuth } from './auth/useAuth.js'
+import AvatarCircle from './auth/AvatarCircle.vue'
+import ProfileSelector from './auth/ProfileSelector.vue'
 
 const { apps } = useRegistry()
 const NAV_ITEMS = computed(() =>
@@ -34,6 +37,14 @@ const THEMES = [
 
 const { theme, isDark, setTheme } = useTheme()
 const logoUrl = computed(() => isDark.value ? logoDark : logoLight)
+
+const { profile } = useAuth()
+const showSwitch = ref(false)
+
+function openSwitch() {
+  emit('close')
+  showSwitch.value = true
+}
 </script>
 
 <template>
@@ -90,6 +101,22 @@ const logoUrl = computed(() => isDark.value ? logoDark : logoLight)
           </a>
         </nav>
 
+        <!-- Account / switch -->
+        <div v-if="profile" class="px-3 pt-3 pb-1 border-t border-white/40 dark:border-white/8">
+          <button @click="openSwitch"
+            class="cursor-pointer w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-white/8 transition-colors">
+            <AvatarCircle :name="profile.name" :color="profile.color" :emoji="profile.emoji"
+              :admin="profile.role === 'admin'" :size="32" />
+            <div class="flex-1 text-left min-w-0">
+              <p class="text-sm font-medium leading-tight truncate">{{ profile.name }}</p>
+              <p class="text-xs text-slate-400 dark:text-slate-500">Switch account</p>
+            </div>
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+            </svg>
+          </button>
+        </div>
+
         <!-- Theme switcher -->
         <div class="px-3 py-3 border-t border-white/40 dark:border-white/8">
           <div class="flex bg-black/5 dark:bg-white/8 rounded-lg p-0.5 gap-0.5">
@@ -119,4 +146,6 @@ const logoUrl = computed(() => isDark.value ? logoDark : logoLight)
       />
     </div>
   </Teleport>
+
+  <ProfileSelector v-if="showSwitch" :closeable="true" @close="showSwitch = false" />
 </template>

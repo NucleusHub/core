@@ -1,5 +1,6 @@
 <script setup>
 import { useTheme } from './useTheme.js'
+
 const { isDark } = useTheme()
 </script>
 
@@ -8,7 +9,9 @@ const { isDark } = useTheme()
     <header class="app-header" :class="{ 'is-dark': isDark }">
       <div class="app-header-left"><slot name="left" /></div>
       <div class="app-header-center"><slot /></div>
-      <div class="app-header-right"><slot name="right" /></div>
+      <div class="app-header-right">
+        <slot name="right" />
+      </div>
     </header>
   </div>
 </template>
