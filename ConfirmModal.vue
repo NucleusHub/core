@@ -12,22 +12,31 @@ const emit = defineEmits(['confirm', 'cancel'])
 const confirmBtn = ref(null)
 
 function onKeydown(e) { if (e.key === 'Escape') emit('cancel') }
+
+function lockScroll()   { document.body.style.overflow = 'hidden' }
+function unlockScroll() { document.body.style.overflow = '' }
+
 watch(() => props.show, (val) => {
   if (val) {
     window.addEventListener('keydown', onKeydown)
+    lockScroll()
     nextTick(() => confirmBtn.value?.focus())
   } else {
     window.removeEventListener('keydown', onKeydown)
+    unlockScroll()
   }
 })
-onUnmounted(() => window.removeEventListener('keydown', onKeydown))
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeydown)
+  unlockScroll()
+})
 </script>
 
 <template>
   <Teleport to="body">
     <Transition name="fade">
-      <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div class="absolute inset-0 bg-black/20 backdrop-blur-xl" @click="$emit('cancel')" />
+      <div v-if="show" class="fixed inset-0 z-[200] flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/20 backdrop-blur-xl" @pointerdown.prevent="$emit('cancel')" />
         <div class="relative bg-white/25 dark:bg-white/8 border border-white/50 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col gap-5">
           <div>
             <h2 class="text-base font-semibold text-slate-900 dark:text-white">{{ title }}</h2>
