@@ -118,7 +118,7 @@ async function doLogin(profileId, pin) {
 async function createProfile() {
   createError.value = null
   if (!newName.value.trim()) { createError.value = 'Name is required'; return }
-  const body = { name: newName.value.trim(), role: 'admin' }
+  const body = { name: newName.value.trim(), role: 'user' }
   if (newPin.value) body.pin = newPin.value.toUpperCase()
   const res = await fetch('/api/auth/profiles', {
     method: 'POST',

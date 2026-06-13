@@ -7,12 +7,13 @@ import { useTheme } from './useTheme.js'
 import { useAuth } from './auth/useAuth.js'
 import AvatarCircle from './auth/AvatarCircle.vue'
 import ProfileSelector from './auth/ProfileSelector.vue'
+import AppIcon from './AppIcon.vue'
 
 const { apps } = useRegistry()
 const NAV_ITEMS = computed(() =>
   apps.value
     .filter(a => a.hub?.showInSidebar !== false)
-    .map(a => ({ label: a.name, to: a.route + '/', description: a.description, icon: a.icon }))
+    .map(a => ({ label: a.name, to: a.route + '/', description: a.description, iconSvg: a.iconSvg }))
 )
 
 const props = defineProps({ open: { type: Boolean, default: false } })
@@ -90,9 +91,7 @@ function openSwitch() {
               class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors"
               :class="isActive(item.to) ? 'bg-indigo-600' : 'bg-black/5 dark:bg-white/8 group-hover:bg-black/8 dark:group-hover:bg-white/15'"
             >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" :d="item.icon" />
-              </svg>
+              <AppIcon :svg="item.iconSvg" class="w-4 h-4" />
             </div>
             <div>
               <p class="text-sm font-medium leading-tight">{{ item.label }}</p>

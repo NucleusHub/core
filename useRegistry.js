@@ -2,6 +2,12 @@ import { ref, onMounted } from 'vue'
 
 const apps = ref([])
 const widgets = ref([])
+// Globally-disabled widget ids (incl. cascade). Exposed so renderers that don't
+// read the filtered `widgets` list (e.g. the orbit system nodes) can honour it.
+const disabledWidgetIds = ref(new Set())
+// Globally-disabled app ids — e.g. disabling "pulse" turns off the whole
+// widget/dashboard system (button, overlay, widgets), leaving only core hub UI.
+const disabledAppIds = ref(new Set())
 const loading = ref(true)
 const error = ref(null)
 
@@ -11,12 +17,28 @@ async function fetchRegistry() {
   if (fetched) return
   fetched = true
   try {
-    const [appsRes, widgetsRes] = await Promise.all([
+    const [appsRes, widgetsRes, overrides] = await Promise.all([
       fetch('/api/registry/apps'),
       fetch('/api/registry/widgets'),
+      // Effective overrides for the current user (global ∪ per-user) — hides
+      // anything an admin disabled globally or just for this user.
+      fetch('/api/auth/effective-overrides', { credentials: 'include' })
+        .then(r => r.ok ? r.json() : { apps: [], widgets: [] })
+        .catch(() => ({ apps: [], widgets: [] })),
     ])
-    apps.value = await appsRes.json()
-    widgets.value = await widgetsRes.json()
+    const rawApps = await appsRes.json()
+    const rawWidgets = await widgetsRes.json()
+    const offApps = new Set(overrides.apps ?? [])
+    const offWidgets = new Set(overrides.widgets ?? [])
+    // Cascade: a widget whose data provider (dependsOn) is disabled is also off
+    // — e.g. disabling "sysinfo" turns off System Load / Storage / Network / Temps.
+    for (const w of rawWidgets) {
+      if (w.dependsOn && offWidgets.has(w.dependsOn)) offWidgets.add(w.id)
+    }
+    disabledWidgetIds.value = offWidgets
+    disabledAppIds.value = offApps
+    apps.value = rawApps.filter(a => !offApps.has(a.id))
+    widgets.value = rawWidgets.filter(w => !offWidgets.has(w.id))
   } catch (e) {
     error.value = e
   } finally {
@@ -26,5 +48,5 @@ async function fetchRegistry() {
 
 export function useRegistry() {
   onMounted(fetchRegistry)
-  return { apps, widgets, loading, error }
+  return { apps, widgets, disabledWidgetIds, disabledAppIds, loading, error }
 }

@@ -3,6 +3,8 @@ import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import mongoose from 'mongoose'
 import Profile, { colorFromName } from '../models/Profile.js'
+import RegistryOverride from '../models/RegistryOverride.js'
+import UserOverride from '../models/UserOverride.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 
 const router = Router()
@@ -98,8 +100,10 @@ router.post('/profiles', async (req, res) => {
     if (pin !== undefined && pin !== null && pin !== '') {
       if (!isValidPin(pin)) return res.status(400).json({ error: 'PIN must be exactly 4 characters (0–9, A–F)' })
     }
-    // Only allow known roles
-    const safeRole = role === 'admin' ? 'admin' : 'user'
+    // New profiles are regular users. The exception is first-run bootstrap:
+    // the very first profile (no admin yet) becomes admin so there's always
+    // an initial admin to manage the rest.
+    const safeRole = adminCount === 0 ? 'admin' : (role === 'admin' ? 'admin' : 'user')
     const pinHash = pin ? await bcrypt.hash(String(pin).toUpperCase(), 10) : null
     const profile = await Profile.create({
       name: name.trim().slice(0, 64),
@@ -238,6 +242,89 @@ router.get('/me', requireAuth, async (req, res) => {
     res.json({ ...safeProfile, hasPin: !!profile.pin })
   } catch {
     res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// ── Global app/widget overrides (admin-controlled, affects all users) ────────
+
+// Lists of globally-DISABLED ids. Any authenticated client reads this to hide
+// disabled apps/widgets for everyone.
+router.get('/overrides', requireAuth, async (_req, res) => {
+  try {
+    const all = await RegistryOverride.find({ disabled: true }).lean()
+    res.json({
+      apps:    all.filter(o => o.kind === 'app').map(o => o.itemId),
+      widgets: all.filter(o => o.kind === 'widget').map(o => o.itemId),
+    })
+  } catch {
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// Admin-only: globally enable/disable an app or widget for ALL users.
+router.patch('/overrides/:kind/:id', requireAdmin, async (req, res) => {
+  try {
+    const { kind, id } = req.params
+    if (kind !== 'app' && kind !== 'widget') return res.status(400).json({ error: 'Invalid kind' })
+    const disabled = !!req.body.disabled
+    await RegistryOverride.findOneAndUpdate(
+      { kind, itemId: id },
+      { kind, itemId: id, disabled },
+      { upsert: true, new: true },
+    )
+    res.json({ kind, itemId: id, disabled })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ── Per-user overrides (admin-managed; global overrides always win) ──────────
+
+// Effective disabled set for the CURRENT user = global ∪ this user's overrides.
+// Clients (useRegistry) filter apps/widgets by this.
+router.get('/effective-overrides', requireAuth, async (req, res) => {
+  try {
+    const [globalOv, userOv] = await Promise.all([
+      RegistryOverride.find({ disabled: true }).lean(),
+      UserOverride.find({ profileId: String(req.profile.profileId), disabled: true }).lean(),
+    ])
+    const ids = (kind) => [
+      ...globalOv.filter(o => o.kind === kind).map(o => o.itemId),
+      ...userOv.filter(o => o.kind === kind).map(o => o.itemId),
+    ]
+    res.json({ apps: [...new Set(ids('app'))], widgets: [...new Set(ids('widget'))] })
+  } catch {
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// Admin: a specific user's per-user disabled set.
+router.get('/users/:id/overrides', requireAdmin, async (req, res) => {
+  try {
+    const all = await UserOverride.find({ profileId: req.params.id, disabled: true }).lean()
+    res.json({
+      apps:    all.filter(o => o.kind === 'app').map(o => o.itemId),
+      widgets: all.filter(o => o.kind === 'widget').map(o => o.itemId),
+    })
+  } catch {
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// Admin: enable/disable an app or widget for one user.
+router.patch('/users/:id/overrides/:kind/:itemId', requireAdmin, async (req, res) => {
+  try {
+    const { id, kind, itemId } = req.params
+    if (kind !== 'app' && kind !== 'widget') return res.status(400).json({ error: 'Invalid kind' })
+    const disabled = !!req.body.disabled
+    await UserOverride.findOneAndUpdate(
+      { profileId: id, kind, itemId },
+      { profileId: id, kind, itemId, disabled },
+      { upsert: true, new: true },
+    )
+    res.json({ profileId: id, kind, itemId, disabled })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
   }
 })
 
