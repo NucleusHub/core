@@ -5,6 +5,8 @@ import mongoose from 'mongoose'
 import Profile, { colorFromName } from '../models/Profile.js'
 import RegistryOverride from '../models/RegistryOverride.js'
 import UserOverride from '../models/UserOverride.js'
+import Group from '../models/Group.js'
+import GroupOverride from '../models/GroupOverride.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 
 const router = Router()
@@ -280,16 +282,26 @@ router.patch('/overrides/:kind/:id', requireAdmin, async (req, res) => {
 
 // ── Per-user overrides (admin-managed; global overrides always win) ──────────
 
-// Effective disabled set for the CURRENT user = global ∪ this user's overrides.
+// Effective disabled set for the CURRENT user, resolving Global > group > user.
+// Because every level can only DISABLE (default is enabled) and groups AND
+// together, the result is simply the union of disabled ids across all levels:
+//   global ∪ (every group the user belongs to) ∪ this user's overrides.
 // Clients (useRegistry) filter apps/widgets by this.
 router.get('/effective-overrides', requireAuth, async (req, res) => {
   try {
-    const [globalOv, userOv] = await Promise.all([
+    const pid = String(req.profile.profileId)
+    const groups = await Group.find({ memberIds: pid }).select('_id').lean()
+    const groupIds = groups.map(g => String(g._id))
+    const [globalOv, groupOv, userOv] = await Promise.all([
       RegistryOverride.find({ disabled: true }).lean(),
-      UserOverride.find({ profileId: String(req.profile.profileId), disabled: true }).lean(),
+      groupIds.length
+        ? GroupOverride.find({ groupId: { $in: groupIds }, disabled: true }).lean()
+        : [],
+      UserOverride.find({ profileId: pid, disabled: true }).lean(),
     ])
     const ids = (kind) => [
       ...globalOv.filter(o => o.kind === kind).map(o => o.itemId),
+      ...groupOv.filter(o => o.kind === kind).map(o => o.itemId),
       ...userOv.filter(o => o.kind === kind).map(o => o.itemId),
     ]
     res.json({ apps: [...new Set(ids('app'))], widgets: [...new Set(ids('widget'))] })
@@ -323,6 +335,127 @@ router.patch('/users/:id/overrides/:kind/:itemId', requireAdmin, async (req, res
       { upsert: true, new: true },
     )
     res.json({ profileId: id, kind, itemId, disabled })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ── Groups ───────────────────────────────────────────────────────────────────
+// A group bundles users and applies its own app/widget rules (GroupOverride) to
+// every member, plus an optional shared Orbit directory. See /effective-overrides
+// for how group rules combine with global/per-user ones.
+
+function serializeGroup(g) {
+  return {
+    _id: String(g._id),
+    name: g.name,
+    memberIds: (g.memberIds ?? []).map(String),
+    sharedOrbit: !!g.sharedOrbit,
+    createdAt: g.createdAt,
+  }
+}
+
+// Groups the CURRENT user belongs to (used by Orbit + the hub). Includes
+// sharedOrbit so Orbit knows which "Group - {name}" directories to surface.
+router.get('/my-groups', requireAuth, async (req, res) => {
+  try {
+    const groups = await Group.find({ memberIds: String(req.profile.profileId) })
+      .sort({ name: 1 }).lean()
+    res.json(groups.map(g => ({ _id: String(g._id), name: g.name, sharedOrbit: !!g.sharedOrbit })))
+  } catch {
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// Admin: list every group (with members + sharedOrbit).
+router.get('/groups', requireAdmin, async (_req, res) => {
+  try {
+    const groups = await Group.find().sort({ name: 1 }).lean()
+    res.json(groups.map(serializeGroup))
+  } catch {
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// Admin: create a group.
+router.post('/groups', requireAdmin, async (req, res) => {
+  try {
+    const name = String(req.body.name ?? '').trim()
+    if (!name) return res.status(400).json({ error: 'Name required' })
+    const group = await Group.create({
+      name,
+      memberIds: Array.isArray(req.body.memberIds) ? req.body.memberIds.map(String) : [],
+      sharedOrbit: !!req.body.sharedOrbit,
+    })
+    res.status(201).json(serializeGroup(group))
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Admin: update a group's name / members / sharedOrbit toggle.
+router.patch('/groups/:id', requireAdmin, async (req, res) => {
+  try {
+    if (!isValidId(req.params.id)) return res.status(404).json({ error: 'Not found' })
+    const update = {}
+    if (req.body.name !== undefined) {
+      const name = String(req.body.name).trim()
+      if (!name) return res.status(400).json({ error: 'Name required' })
+      update.name = name
+    }
+    if (req.body.memberIds !== undefined) {
+      if (!Array.isArray(req.body.memberIds)) return res.status(400).json({ error: 'memberIds must be an array' })
+      update.memberIds = req.body.memberIds.map(String)
+    }
+    if (req.body.sharedOrbit !== undefined) update.sharedOrbit = !!req.body.sharedOrbit
+    const group = await Group.findByIdAndUpdate(req.params.id, update, { new: true })
+    if (!group) return res.status(404).json({ error: 'Not found' })
+    res.json(serializeGroup(group))
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Admin: delete a group (and its override rows). Any shared Orbit files are
+// handled separately by the admin client via Orbit's teardown endpoint before
+// this is called.
+router.delete('/groups/:id', requireAdmin, async (req, res) => {
+  try {
+    if (!isValidId(req.params.id)) return res.status(404).json({ error: 'Not found' })
+    const group = await Group.findByIdAndDelete(req.params.id)
+    if (!group) return res.status(404).json({ error: 'Not found' })
+    await GroupOverride.deleteMany({ groupId: req.params.id })
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Admin: a group's app/widget disabled set.
+router.get('/groups/:id/overrides', requireAdmin, async (req, res) => {
+  try {
+    const all = await GroupOverride.find({ groupId: req.params.id, disabled: true }).lean()
+    res.json({
+      apps:    all.filter(o => o.kind === 'app').map(o => o.itemId),
+      widgets: all.filter(o => o.kind === 'widget').map(o => o.itemId),
+    })
+  } catch {
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// Admin: enable/disable an app or widget for one group.
+router.patch('/groups/:id/overrides/:kind/:itemId', requireAdmin, async (req, res) => {
+  try {
+    const { id, kind, itemId } = req.params
+    if (kind !== 'app' && kind !== 'widget') return res.status(400).json({ error: 'Invalid kind' })
+    const disabled = !!req.body.disabled
+    await GroupOverride.findOneAndUpdate(
+      { groupId: id, kind, itemId },
+      { groupId: id, kind, itemId, disabled },
+      { upsert: true, new: true },
+    )
+    res.json({ groupId: id, kind, itemId, disabled })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
