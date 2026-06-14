@@ -39,7 +39,8 @@ const { isDark } = useTheme()
   -webkit-backdrop-filter: blur(20px) saturate(1.6);
   border: 1px solid rgba(255, 255, 255, 0.72);
   box-shadow:
-    0 4px 24px rgba(0, 0, 0, 0.07),
+    0 8px 28px rgba(15, 23, 42, 0.13),
+    0 2px 6px rgba(15, 23, 42, 0.06),
     0 1px 0 rgba(255, 255, 255, 0.85) inset;
 }
 

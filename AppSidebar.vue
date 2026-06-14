@@ -162,7 +162,7 @@ function openSwitch() {
 
 <style scoped>
 .admin-btn {
-  width: 100%;
+  width: 95%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -178,7 +178,7 @@ function openSwitch() {
   cursor: pointer;
   transition: background 0.13s, border-color 0.13s, color 0.13s;
 
-  margin: 10px 0;
+  margin: 10px auto;
 }
 
 .admin-btn:hover {
