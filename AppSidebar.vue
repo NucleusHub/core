@@ -119,7 +119,7 @@ function openSwitch() {
         </div>
 
         <div v-if="isAdmin" class="sidebar-footer">
-          <a class="admin-btn" href="/admin/">
+          <a class="admin-btn" :class="{ 'theme-light': !isDark }" href="/admin/">
             <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
               <path d="M12 2L3 6v6c0 5.25 3.75 10.15 9 11.35C17.25 22.15 21 17.25 21 12V6l-9-4z" />
             </svg>
@@ -172,18 +172,33 @@ function openSwitch() {
   font-size: 13px;
   font-weight: 500;
   text-decoration: none;
-  color: rgba(255, 255, 255, 0.75);
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
   cursor: pointer;
   transition: background 0.13s, border-color 0.13s, color 0.13s;
 
   margin: 10px auto;
+
+  /* Dark (default) */
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .admin-btn:hover {
   background: rgba(255, 255, 255, 0.12);
   border-color: rgba(255, 255, 255, 0.2);
   color: #fff;
+}
+
+/* Light mode (theme-light class set from useTheme) */
+.admin-btn.theme-light {
+  color: rgba(30, 41, 59, 0.8);
+  background: rgba(15, 23, 42, 0.05);
+  border-color: rgba(15, 23, 42, 0.12);
+}
+
+.admin-btn.theme-light:hover {
+  background: rgba(15, 23, 42, 0.09);
+  border-color: rgba(15, 23, 42, 0.2);
+  color: #0f172a;
 }
 </style>
