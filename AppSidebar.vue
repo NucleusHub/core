@@ -16,6 +16,8 @@ const NAV_ITEMS = computed(() =>
     .map(a => ({ label: a.name, to: a.route + '/', description: a.description, iconSvg: a.iconSvg }))
 )
 
+const isAdmin = computed(() => profile.value?.role === 'admin')
+
 const props = defineProps({ open: { type: Boolean, default: false } })
 const emit = defineEmits(['close'])
 
@@ -116,6 +118,15 @@ function openSwitch() {
           </button>
         </div>
 
+        <div v-if="isAdmin" class="sidebar-footer">
+          <a class="admin-btn" href="/admin/">
+            <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12 2L3 6v6c0 5.25 3.75 10.15 9 11.35C17.25 22.15 21 17.25 21 12V6l-9-4z" />
+            </svg>
+            Admin Console
+          </a>
+        </div>
+
         <!-- Theme switcher -->
         <div class="px-3 py-3 border-t border-white/40 dark:border-white/8">
           <div class="flex bg-black/5 dark:bg-white/8 rounded-lg p-0.5 gap-0.5">
@@ -148,3 +159,31 @@ function openSwitch() {
 
   <ProfileSelector v-if="showSwitch" :closeable="true" @close="showSwitch = false" />
 </template>
+
+<style scoped>
+.admin-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  transition: background 0.13s, border-color 0.13s, color 0.13s;
+
+  margin: 10px 0;
+}
+
+.admin-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+</style>
