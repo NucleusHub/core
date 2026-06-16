@@ -31,6 +31,9 @@ function onKeydown(e) { if (e.key === 'Escape') emit('cancel') }
 function lockScroll()   { document.body.style.overflow = 'hidden' }
 function unlockScroll() { document.body.style.overflow = '' }
 
+// `immediate` so a modal mounted while already open (e.g. an on-demand picker
+// rendered with :show=true from the start) still wires up Escape-to-close, the
+// scroll lock and autofocus — not only when `show` transitions false→true.
 watch(() => props.show, (val) => {
   if (val) {
     window.addEventListener('keydown', onKeydown)
@@ -40,7 +43,7 @@ watch(() => props.show, (val) => {
     window.removeEventListener('keydown', onKeydown)
     unlockScroll()
   }
-})
+}, { immediate: true })
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
   unlockScroll()

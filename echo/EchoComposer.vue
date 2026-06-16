@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, nextTick } from 'vue'
 import EchoActionButton from './EchoActionButton.vue'
 
 // The message input. Its action row is built purely from registry-supplied
@@ -16,12 +16,16 @@ const props = defineProps({
 const emit = defineEmits(['send', 'action', 'typing'])
 
 const text = ref('')
+const textarea = ref(null)
 
 function submit() {
   const value = text.value.trim()
   if (!value || props.disabled) return
   emit('send', { type: 'text', payload: { text: value } })
   text.value = ''
+  // Keep focus in the field after sending so you can keep typing — clicking the
+  // send button would otherwise steal focus (pressing Enter keeps it anyway).
+  nextTick(() => textarea.value?.focus())
 }
 </script>
 
@@ -38,6 +42,7 @@ function submit() {
     </div>
     <form class="flex items-end gap-2" @submit.prevent="submit">
       <textarea
+        ref="textarea"
         v-model="text"
         rows="1"
         :placeholder="placeholder"
