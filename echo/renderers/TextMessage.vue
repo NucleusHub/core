@@ -11,11 +11,12 @@ const props = defineProps({
 const parts = computed(() => linkify(props.payload.text))
 
 // On the indigo "mine" bubble (white text), sky links are invisible — use a
-// light blue that contrasts. Off the accent, use the theme-aware sky pair.
+// light blue that contrasts. Light mode uses a custom blue; dark keeps sky-200.
+// Off the accent, use the theme-aware sky pair.
 const onAccent = inject('echoOnAccent', null)
 const linkClass = computed(() =>
   onAccent?.value
-    ? 'break-all text-sky-200 underline decoration-sky-200/60 underline-offset-2 hover:decoration-sky-100'
+    ? 'echo-accent-link break-all underline decoration-sky-200/60 underline-offset-2 hover:decoration-sky-100'
     : 'break-all text-sky-500 underline decoration-sky-500/40 underline-offset-2 hover:decoration-sky-500 dark:text-sky-300 dark:decoration-sky-300/40 dark:hover:decoration-sky-300'
 )
 </script>
@@ -32,3 +33,9 @@ const linkClass = computed(() =>
     :class="linkClass"
   >{{ p.text }}</a><template v-else>{{ p.text }}</template></template></p>
 </template>
+
+<style scoped>
+/* Links on the indigo "mine" bubble. Light: custom blue; dark: sky-200. */
+.echo-accent-link { color: rgb(122, 198, 242); }
+:where(.dark) .echo-accent-link { color: #bae6fd; }
+</style>
