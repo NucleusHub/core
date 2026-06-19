@@ -40,6 +40,28 @@ async function login(profileId, pin = null) {
     err.status = res.status
     throw err
   }
+  const data = await res.json()
+  updateRecentProfiles(profileId)
+  // A temporary PIN doesn't grant a session yet — the caller must collect a new
+  // PIN and call completeTempLogin. Don't mark the user authenticated.
+  if (!data.pinTemporary) profile.value = data
+  return data
+}
+
+// Finish a temporary-PIN login: re-prove the temp PIN and set a new one. Only on
+// success is a session established and the user marked authenticated.
+async function completeTempLogin(profileId, currentPin, newPin) {
+  const res = await fetch('/api/auth/login/set-pin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ profileId, currentPin, newPin }),
+  })
+  if (!res.ok) {
+    const err = new Error((await res.json()).error || 'Could not set PIN')
+    err.status = res.status
+    throw err
+  }
   profile.value = await res.json()
   updateRecentProfiles(profileId)
 }
@@ -70,6 +92,7 @@ export function useAuth() {
     isAuthenticated: computed(() => !!profile.value),
     checkSession,
     login,
+    completeTempLogin,
     logout,
     handleUnauthorized,
     authFetch,

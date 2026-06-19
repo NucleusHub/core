@@ -11,13 +11,20 @@ const props = defineProps({
 })
 const emit = defineEmits(['close'])
 
-const { login, profile: currentProfile } = useAuth()
+const { login, completeTempLogin, profile: currentProfile } = useAuth()
 
 const profiles = ref([])
 const selected = ref(null)
 const pinError = ref(null)
 const pinShake = ref(false)
 const pinInputRef = ref(null)
+
+// Temporary-PIN flow: after a one-time PIN is accepted the user must choose their
+// own before a session is granted. Until they do, nothing is changed server-side.
+const settingNewPin = ref(false)
+const tempPinValue = ref('')        // the one-time PIN they just entered
+const newPinStep = ref('enter')     // 'enter' | 'confirm'
+const firstNewPin = ref('')
 const RATE_LIMIT_KEY = 'nucleus_pin_rate_limit_until'
 const rateLimited = ref(false)
 const rateLimitTimer = ref(null)
@@ -60,6 +67,7 @@ onMounted(async () => {
 function onKeydown(e) {
   if (e.key !== 'Escape') return
   if (creating.value) { creating.value = false; return }
+  if (settingNewPin.value) { cancelNewPin(); return }
   if (selected.value) { pinOnly.value ? emit('close') : back(); return }
   if (props.closeable) emit('close')
 }
@@ -82,6 +90,23 @@ function selectProfile(p) {
 function back() {
   selected.value = null
   pinError.value = null
+  resetNewPin()
+}
+
+function resetNewPin() {
+  settingNewPin.value = false
+  tempPinValue.value = ''
+  newPinStep.value = 'enter'
+  firstNewPin.value = ''
+}
+
+// Leave the set-new-PIN step without changing anything: back to the selector
+// (or close, when launched for a single preselected profile).
+function cancelNewPin() {
+  resetNewPin()
+  pinError.value = null
+  if (pinOnly.value) emit('close')
+  else back()
 }
 
 async function submitPin(pin) {
@@ -95,23 +120,60 @@ async function loginNoPin(p) {
 async function doLogin(profileId, pin) {
   pinError.value = null
   try {
-    await login(profileId, pin)
+    const data = await login(profileId, pin)
+    if (data?.pinTemporary) {
+      // One-time PIN accepted — collect a new PIN before granting a session.
+      tempPinValue.value = pin
+      settingNewPin.value = true
+      newPinStep.value = 'enter'
+      firstNewPin.value = ''
+      return
+    }
     if (props.closeable) window.location.reload()
     // else AuthGuard handles the transition via profile ref
   } catch (err) {
-    if (err.status === 429 || err.message?.toLowerCase().includes('too many')) {
-      const until = Date.now() + 15 * 60 * 1000
-      localStorage.setItem(RATE_LIMIT_KEY, String(until))
-      pinError.value = 'Too many attempts — try again in 15 minutes'
-      applyRateLimit(15 * 60 * 1000)
-    } else {
-      pinError.value = err.message
-      pinShake.value = true
-      setTimeout(() => {
-        pinShake.value = false
-        pinInputRef.value?.clear()
-      }, 400)
-    }
+    handlePinError(err)
+  }
+}
+
+// Step through entering and confirming the new PIN, then complete the login.
+async function onNewPin(pin) {
+  pinError.value = null
+  if (newPinStep.value === 'enter') {
+    firstNewPin.value = pin
+    newPinStep.value = 'confirm'   // :key swap remounts PinInput fresh
+    return
+  }
+  if (pin !== firstNewPin.value) {
+    firstNewPin.value = ''
+    newPinStep.value = 'enter'
+    pinError.value = "PINs didn't match — try again"
+    return
+  }
+  try {
+    await completeTempLogin(selected.value._id, tempPinValue.value, pin)
+    if (props.closeable) window.location.reload()
+    // else AuthGuard handles the transition via profile ref
+  } catch (err) {
+    firstNewPin.value = ''
+    newPinStep.value = 'enter'
+    handlePinError(err)
+  }
+}
+
+function handlePinError(err) {
+  if (err.status === 429 || err.message?.toLowerCase().includes('too many')) {
+    const until = Date.now() + 15 * 60 * 1000
+    localStorage.setItem(RATE_LIMIT_KEY, String(until))
+    pinError.value = 'Too many attempts — try again in 15 minutes'
+    applyRateLimit(15 * 60 * 1000)
+  } else {
+    pinError.value = err.message
+    pinShake.value = true
+    setTimeout(() => {
+      pinShake.value = false
+      pinInputRef.value?.clear()
+    }, 400)
   }
 }
 
@@ -171,7 +233,12 @@ async function createProfile() {
                   <span class="text-xs font-semibold text-white w-full truncate text-center" style="text-shadow: none">{{ p.name }}</span>
                 </div>
               </LiquidGlass>
-              <span v-if="p.hasPin && p._id !== currentProfile?._id"
+              <span v-if="p.hasPin && p.pinTemporary && p._id !== currentProfile?._id"
+                class="absolute top-1 right-1 z-10 inline-flex items-center gap-0.5 text-[9px] font-bold tracking-wide px-1.5 py-0.5 rounded-md bg-amber-500/25 text-amber-300">
+                <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path stroke-linecap="round" d="M12 7v5l3 2" /></svg>
+                PIN
+              </span>
+              <span v-else-if="p.hasPin && p._id !== currentProfile?._id"
                 class="absolute top-1 right-1 z-10 text-[9px] font-bold tracking-wide px-1.5 py-0.5 rounded-md bg-violet-500/20 text-violet-300">PIN</span>
             </div>
             <span v-if="p._id === currentProfile?._id"
@@ -201,9 +268,9 @@ async function createProfile() {
       <Transition name="fade">
         <div v-if="selected"
           class="absolute inset-0 z-20 flex items-center justify-center p-4"
-          @click.self="pinOnly ? emit('close') : back()">
+          @click.self="settingNewPin ? cancelNewPin() : (pinOnly ? emit('close') : back())">
           <div class="relative bg-white/15 dark:bg-white/8 border border-white/30 dark:border-white/10 rounded-2xl shadow-2xl backdrop-blur-xl w-full max-w-xs p-8 flex flex-col items-center gap-5">
-            <button @click="pinOnly ? emit('close') : back()"
+            <button @click="settingNewPin ? cancelNewPin() : (pinOnly ? emit('close') : back())"
               class="absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-colors cursor-pointer">
               <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                 <path d="M1 1l12 12M13 1L1 13" />
@@ -212,7 +279,24 @@ async function createProfile() {
             <AvatarCircle :name="selected.name" :color="selected.color" :emoji="selected.emoji"
               :admin="selected.role === 'admin'" :size="76" />
             <p class="font-semibold text-white">{{ selected.name }}</p>
-            <PinInput ref="pinInputRef" :error="pinError" :shake="pinShake" :disabled="rateLimited" @complete="submitPin" />
+
+            <!-- Normal PIN entry -->
+            <PinInput v-if="!settingNewPin" ref="pinInputRef" :error="pinError" :shake="pinShake" :disabled="rateLimited" @complete="submitPin" />
+
+            <!-- Set-your-own-PIN step (after a one-time PIN) -->
+            <template v-else>
+              <p class="text-xs text-white/60 text-center -mt-2">
+                {{ newPinStep === 'enter' ? 'Choose your own PIN' : 'Re-enter your new PIN to confirm' }}
+              </p>
+              <PinInput :key="newPinStep" :error="pinError" @complete="onNewPin" />
+              <button @click="cancelNewPin"
+                class="flex items-center gap-1.5 text-sm text-white/60 hover:text-white transition-colors cursor-pointer">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M19 12H5M12 19l-7-7 7-7" />
+                </svg>
+                Back
+              </button>
+            </template>
           </div>
         </div>
       </Transition>

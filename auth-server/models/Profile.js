@@ -16,6 +16,13 @@ const profileSchema = new mongoose.Schema({
   name:        { type: String, required: true, trim: true },
   role:        { type: String, enum: ['admin', 'user'], default: 'user' },
   pin:         { type: String, default: null },
+  // When true, `pin` is a one-time PIN: the user is forced to choose their own
+  // PIN on first login, after which this clears. See auth-server/routes/index.js.
+  pinTemporary: { type: Boolean, default: false },
+  // Plaintext of the active one-time PIN, kept only so an admin can read it back
+  // and relay it to the user. Cleared the moment the user sets their own PIN.
+  // Never exposed by public/self endpoints — admin-only.
+  pinTempPlain: { type: String, default: null },
   emoji:       { type: String, default: null },
   color:       { type: String, required: true },
   lastLoginAt: { type: Date, default: null },

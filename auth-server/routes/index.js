@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
+import { randomInt } from 'crypto'
 import mongoose from 'mongoose'
 import Profile, { colorFromName } from '../models/Profile.js'
 import RegistryOverride from '../models/RegistryOverride.js'
@@ -52,6 +53,14 @@ function isValidPin(pin) {
   return PIN_RE.test(String(pin).toUpperCase())
 }
 
+// Generate a random 4-character hex one-time PIN (0–9, A–F).
+function randomPin() {
+  const chars = '0123456789ABCDEF'
+  let s = ''
+  for (let i = 0; i < 4; i++) s += chars[randomInt(16)]
+  return s
+}
+
 // ── Profile list ────────────────────────────────────────────────────────────
 
 router.get('/profiles', async (req, res) => {
@@ -73,6 +82,7 @@ router.get('/profiles', async (req, res) => {
       emoji: p.emoji,
       color: p.color,
       hasPin: !!p.pin,
+      pinTemporary: !!p.pinTemporary,
       isGuest: p.isGuest,
     })))
   } catch {
@@ -97,26 +107,35 @@ router.post('/profiles', async (req, res) => {
       }
     }
 
-    const { name, role = 'user', pin, emoji, color } = req.body
+    const { name, role = 'user', pin, emoji, color, pinTemporary } = req.body
     if (!name?.trim()) return res.status(400).json({ error: 'Name is required' })
     if (pin !== undefined && pin !== null && pin !== '') {
       if (!isValidPin(pin)) return res.status(400).json({ error: 'PIN must be exactly 4 characters (0–9, A–F)' })
+    }
+    if (color !== undefined && color !== null && color !== '' && !/^#[0-9a-fA-F]{3,8}$/.test(color)) {
+      return res.status(400).json({ error: 'Invalid color' })
     }
     // New profiles are regular users. The exception is first-run bootstrap:
     // the very first profile (no admin yet) becomes admin so there's always
     // an initial admin to manage the rest.
     const safeRole = adminCount === 0 ? 'admin' : (role === 'admin' ? 'admin' : 'user')
     const pinHash = pin ? await bcrypt.hash(String(pin).toUpperCase(), 10) : null
+    const isTemp = !!pinHash && !!pinTemporary
     const profile = await Profile.create({
       name: name.trim().slice(0, 64),
       role: safeRole,
       pin: pinHash,
+      // Temporary only makes sense alongside an actual PIN to log in with first.
+      pinTemporary: isTemp,
+      // Keep the plaintext of a one-time PIN so an admin can read it back later.
+      pinTempPlain: isTemp ? String(pin).toUpperCase() : null,
       emoji: emoji ? String(emoji).slice(0, 8) : null,
       color: color || colorFromName(name),
     })
     res.status(201).json({
       _id: profile._id, name: profile.name, role: profile.role,
-      emoji: profile.emoji, color: profile.color, hasPin: !!profile.pin, isGuest: false,
+      emoji: profile.emoji, color: profile.color, hasPin: !!profile.pin,
+      pinTemporary: !!profile.pinTemporary, isGuest: false,
     })
   } catch (err) {
     res.status(400).json({ error: err.message })
@@ -140,7 +159,17 @@ router.patch('/profiles/:id', requireAuth, async (req, res) => {
 
     if (update.color === undefined) delete update.color
 
-    const profile = await Profile.findByIdAndUpdate(req.params.id, update, { new: true }).select('-pin')
+    // Guard the last admin: demoting the only remaining admin would lock everyone
+    // out of administration, so it's refused.
+    if (update.role === 'user') {
+      const target = await Profile.findById(req.params.id).select('role').lean()
+      if (target?.role === 'admin') {
+        const admins = await Profile.countDocuments({ role: 'admin', isGuest: false })
+        if (admins <= 1) return res.status(400).json({ error: 'Can’t remove the last admin' })
+      }
+    }
+
+    const profile = await Profile.findByIdAndUpdate(req.params.id, update, { new: true }).select('-pin -pinTempPlain')
     if (!profile) return res.status(404).json({ error: 'Not found' })
     res.json(profile)
   } catch {
@@ -156,27 +185,118 @@ router.patch('/profiles/:id/pin', requireAuth, async (req, res) => {
     const isOwn = String(req.profile.profileId) === req.params.id
     if (!isOwn && req.profile.role !== 'admin') return res.status(403).json({ error: 'Forbidden' })
 
-    const { pin } = req.body
+    const { pin, temporary } = req.body
     if (pin !== undefined && pin !== null && pin !== '') {
       if (!isValidPin(pin)) return res.status(400).json({ error: 'PIN must be exactly 4 characters (0–9, A–F)' })
     }
     const pinHash = pin ? await bcrypt.hash(String(pin).toUpperCase(), 10) : null
-    await Profile.findByIdAndUpdate(req.params.id, { pin: pinHash })
+    // This path is the user choosing their own PIN (or clearing it): the PIN
+    // becomes permanent and any one-time PIN plaintext is wiped. Admins issue
+    // one-time PINs through the dedicated reset endpoint below, not here.
+    await Profile.findByIdAndUpdate(req.params.id, {
+      pin: pinHash,
+      pinTemporary: !!pinHash && !!temporary,
+      pinTempPlain: null,
+    })
     res.json({ ok: true })
   } catch {
     res.status(500).json({ error: 'Server error' })
   }
 })
 
-// ── Delete profile ──────────────────────────────────────────────────────────
+// ── Reset PIN (admin-issued one-time PIN) ────────────────────────────────────
+// Generates a fresh one-time PIN, returns its plaintext so the admin can relay
+// it, and forces the user to choose their own on next sign-in. The plaintext is
+// kept (pinTempPlain) so the admin can read it back until the user changes it.
 
-router.delete('/profiles/:id', requireAdmin, async (req, res) => {
+router.post('/profiles/:id/pin/reset', requireAdmin, async (req, res) => {
   try {
     if (!isValidId(req.params.id)) return res.status(400).json({ error: 'Invalid profile ID' })
     const profile = await Profile.findById(req.params.id)
     if (!profile) return res.status(404).json({ error: 'Not found' })
-    if (profile.isGuest) return res.status(400).json({ error: 'Cannot delete Guest' })
-    await profile.deleteOne()
+    if (profile.isGuest) return res.status(400).json({ error: 'Guest profiles cannot have a PIN' })
+
+    const pin = randomPin()
+    profile.pin = await bcrypt.hash(pin, 10)
+    profile.pinTemporary = true
+    profile.pinTempPlain = pin
+    await profile.save()
+    res.json({ pin, pinTemporary: true, hasPin: true })
+  } catch {
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// Admin-only: read back the active one-time PIN (plaintext) for a profile, so the
+// config modal can keep showing it until the user replaces it. Returns null pin
+// when there is no active one-time PIN.
+router.get('/profiles/:id/pin-temp', requireAdmin, async (req, res) => {
+  try {
+    if (!isValidId(req.params.id)) return res.status(400).json({ error: 'Invalid profile ID' })
+    const profile = await Profile.findById(req.params.id).select('pin pinTemporary pinTempPlain').lean()
+    if (!profile) return res.status(404).json({ error: 'Not found' })
+    res.json({
+      hasPin: !!profile.pin,
+      pinTemporary: !!profile.pinTemporary,
+      pin: profile.pinTemporary ? (profile.pinTempPlain || null) : null,
+    })
+  } catch {
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// ── Delete profile ──────────────────────────────────────────────────────────
+// Destructive: the admin client first tears down the user's data in every app
+// (Orbit/Echo/Goals/Watchlist/Pulse), then calls DELETE here to drop group
+// membership, per-user overrides and the profile itself. Both the pre-flight
+// check and the delete require the acting admin to re-enter their own PIN, so
+// the irreversible teardown only runs once the PIN is confirmed.
+
+// Verify the acting admin's PIN and that the target profile may be deleted.
+// Returns { status, error } on failure, or { target } on success.
+async function authorizeProfileDeletion(req) {
+  if (!isValidId(req.params.id)) return { status: 400, error: 'Invalid profile ID' }
+  const target = await Profile.findById(req.params.id)
+  if (!target) return { status: 404, error: 'Not found' }
+  if (target.isGuest) return { status: 400, error: 'Cannot delete Guest' }
+  if (String(req.profile.profileId) === String(target._id)) {
+    return { status: 400, error: "You can't delete your own profile" }
+  }
+  // Admins must be demoted to a regular user before they can be deleted.
+  if (target.role === 'admin') {
+    return { status: 400, error: 'Demote this admin to a user before deleting' }
+  }
+  const admin = await Profile.findById(req.profile.profileId)
+  if (!admin) return { status: 401, error: 'Session profile not found' }
+  if (admin.pin) {
+    const { pin } = req.body || {}
+    if (!pin) return { status: 401, error: 'PIN required' }
+    const ok = await bcrypt.compare(String(pin).toUpperCase(), admin.pin)
+    if (!ok) return { status: 401, error: 'Wrong PIN' }
+  }
+  return { target }
+}
+
+// Pre-flight: confirm the admin's PIN before the client runs the data teardown.
+router.post('/profiles/:id/confirm-delete', requireAdmin, async (req, res) => {
+  try {
+    const r = await authorizeProfileDeletion(req)
+    if (r.error) return res.status(r.status).json({ error: r.error })
+    res.json({ ok: true })
+  } catch {
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+router.delete('/profiles/:id', requireAdmin, async (req, res) => {
+  try {
+    const r = await authorizeProfileDeletion(req)
+    if (r.error) return res.status(r.status).json({ error: r.error })
+    const id = String(req.params.id)
+    // Drop the user from any groups they belonged to, plus their override rows.
+    await Group.updateMany({ memberIds: id }, { $pull: { memberIds: id } })
+    await UserOverride.deleteMany({ profileId: id })
+    await r.target.deleteOne()
     res.json({ ok: true })
   } catch {
     res.status(500).json({ error: 'Server error' })
@@ -206,6 +326,18 @@ router.post('/login', async (req, res) => {
 
     resetLoginRate(ip)
 
+    // A temporary (one-time) PIN does NOT establish a session: the user must
+    // choose their own PIN first (see /login/set-pin). Until they do, the
+    // temporary PIN stays valid, so backing out or reloading just returns them
+    // to the profile selector.
+    if (profile.pinTemporary) {
+      return res.json({
+        pinTemporary: true,
+        profileId: profile._id, name: profile.name, role: profile.role,
+        emoji: profile.emoji, color: profile.color,
+      })
+    }
+
     profile.lastLoginAt = new Date()
     await profile.save()
 
@@ -216,8 +348,55 @@ router.post('/login', async (req, res) => {
     )
     res.cookie('nucleus_token', token, COOKIE)
     res.json({
-      profileId: profile._id, name: profile.name, role: profile.role,
-      emoji: profile.emoji, color: profile.color,
+      _id: profile._id, profileId: profile._id, name: profile.name, role: profile.role,
+      emoji: profile.emoji, color: profile.color, pinTemporary: false,
+    })
+  } catch {
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// ── Complete a temporary-PIN login ───────────────────────────────────────────
+// The user re-proves the temporary PIN and sets their own. Only on success is a
+// session established. If they never call this, the temporary PIN is untouched.
+
+router.post('/login/set-pin', async (req, res) => {
+  const ip = req.ip || req.socket?.remoteAddress || 'unknown'
+  if (!checkLoginRate(ip)) {
+    return res.status(429).json({ error: 'Too many attempts. Try again in 15 minutes.' })
+  }
+
+  try {
+    const { profileId, currentPin, newPin } = req.body
+    if (!isValidId(profileId)) return res.status(400).json({ error: 'Invalid profile ID' })
+    if (!isValidPin(newPin)) return res.status(400).json({ error: 'PIN must be exactly 4 characters (0–9, A–F)' })
+
+    const profile = await Profile.findById(profileId)
+    if (!profile) return res.status(404).json({ error: 'Profile not found' })
+    if (!profile.pinTemporary || !profile.pin) {
+      return res.status(400).json({ error: 'No temporary PIN to replace' })
+    }
+
+    const valid = await bcrypt.compare(String(currentPin || '').toUpperCase(), profile.pin)
+    if (!valid) return res.status(401).json({ error: 'Wrong PIN' })
+
+    resetLoginRate(ip)
+
+    profile.pin = await bcrypt.hash(String(newPin).toUpperCase(), 10)
+    profile.pinTemporary = false
+    profile.pinTempPlain = null
+    profile.lastLoginAt = new Date()
+    await profile.save()
+
+    const token = jwt.sign(
+      { profileId: profile._id, name: profile.name, role: profile.role },
+      secret(),
+      { expiresIn: '30d' }
+    )
+    res.cookie('nucleus_token', token, COOKIE)
+    res.json({
+      _id: profile._id, profileId: profile._id, name: profile.name, role: profile.role,
+      emoji: profile.emoji, color: profile.color, pinTemporary: false,
     })
   } catch {
     res.status(500).json({ error: 'Server error' })
@@ -240,8 +419,8 @@ router.get('/me', requireAuth, async (req, res) => {
       res.clearCookie('nucleus_token', { path: '/' })
       return res.status(401).json({ error: 'Profile not found' })
     }
-    const { pin: _pin, ...safeProfile } = profile
-    res.json({ ...safeProfile, hasPin: !!profile.pin })
+    const { pin: _pin, pinTempPlain: _tmp, ...safeProfile } = profile
+    res.json({ ...safeProfile, hasPin: !!profile.pin, pinTemporary: !!profile.pinTemporary })
   } catch {
     res.status(500).json({ error: 'Server error' })
   }
