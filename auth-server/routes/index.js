@@ -99,12 +99,17 @@ router.post('/profiles', async (req, res) => {
     if (adminCount > 0) {
       const token = req.cookies?.nucleus_token
       if (!token) return res.status(401).json({ error: 'Must be logged in as admin' })
+      let claim
       try {
-        const p = jwt.verify(token, secret())
-        if (p.role !== 'admin') return res.status(403).json({ error: 'Admin required' })
+        claim = jwt.verify(token, secret())
       } catch {
         return res.status(401).json({ error: 'Invalid token' })
       }
+      // Re-check the role against the DB rather than trusting the token's `role`
+      // claim: tokens live 30 days, so a since-demoted admin's stale token must
+      // not still authorize creating profiles (including new admins).
+      const actor = await Profile.findById(claim.profileId).select('role').lean()
+      if (!actor || actor.role !== 'admin') return res.status(403).json({ error: 'Admin required' })
     }
 
     const { name, role = 'user', pin, emoji, color, pinTemporary } = req.body
@@ -119,6 +124,11 @@ router.post('/profiles', async (req, res) => {
     // the very first profile (no admin yet) becomes admin so there's always
     // an initial admin to manage the rest.
     const safeRole = adminCount === 0 ? 'admin' : (role === 'admin' ? 'admin' : 'user')
+    // Admins must always have a PIN: a PIN-less profile is logged into from the
+    // picker with zero credentials, so a PIN-less admin = unauthenticated takeover.
+    if (safeRole === 'admin' && (pin === undefined || pin === null || pin === '')) {
+      return res.status(400).json({ error: 'Admin profiles require a PIN' })
+    }
     const pinHash = pin ? await bcrypt.hash(String(pin).toUpperCase(), 10) : null
     const isTemp = !!pinHash && !!pinTemporary
     const profile = await Profile.create({
@@ -169,6 +179,15 @@ router.patch('/profiles/:id', requireAuth, async (req, res) => {
       }
     }
 
+    // Don't create a credential-free admin: a profile must already have a PIN
+    // before it can be promoted (admins are logged into via PIN, never PIN-less).
+    if (update.role === 'admin') {
+      const target = await Profile.findById(req.params.id).select('pin').lean()
+      if (target && !target.pin) {
+        return res.status(400).json({ error: 'Set a PIN on this profile before making it an admin' })
+      }
+    }
+
     const profile = await Profile.findByIdAndUpdate(req.params.id, update, { new: true }).select('-pin -pinTempPlain')
     if (!profile) return res.status(404).json({ error: 'Not found' })
     res.json(profile)
@@ -190,6 +209,14 @@ router.patch('/profiles/:id/pin', requireAuth, async (req, res) => {
       if (!isValidPin(pin)) return res.status(400).json({ error: 'PIN must be exactly 4 characters (0–9, A–F)' })
     }
     const pinHash = pin ? await bcrypt.hash(String(pin).toUpperCase(), 10) : null
+    // Admins must keep a PIN — clearing it would make the account loginable from
+    // the picker with no credentials. Block removing an admin's PIN.
+    if (!pinHash) {
+      const target = await Profile.findById(req.params.id).select('role').lean()
+      if (target?.role === 'admin') {
+        return res.status(400).json({ error: 'Admins must keep a PIN' })
+      }
+    }
     // This path is the user choosing their own PIN (or clearing it): the PIN
     // becomes permanent and any one-time PIN plaintext is wiped. Admins issue
     // one-time PINs through the dedicated reset endpoint below, not here.
@@ -317,6 +344,14 @@ router.post('/login', async (req, res) => {
 
     const profile = await Profile.findById(profileId)
     if (!profile) return res.status(404).json({ error: 'Profile not found' })
+
+    // Defense-in-depth for legacy data: an admin with no PIN must never get a
+    // credential-free session. New admins are required to have a PIN; this
+    // catches any pre-existing PIN-less admin (recoverable via another admin's
+    // reset). Regular profiles may still be PIN-less by design (picker login).
+    if (profile.role === 'admin' && !profile.pin) {
+      return res.status(403).json({ error: 'This admin profile has no PIN. Ask another admin to reset it.' })
+    }
 
     if (profile.pin) {
       if (!pin) return res.status(401).json({ error: 'PIN required' })
