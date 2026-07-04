@@ -9,8 +9,13 @@ import UserOverride from '../models/UserOverride.js'
 import Group from '../models/Group.js'
 import GroupOverride from '../models/GroupOverride.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
+import localizationRouter from './localization.js'
 
 const router = Router()
+
+// Core localization service (catalogs, config, admin management) at
+// /api/auth/i18n/* — see routes/localization.js.
+router.use('/i18n', localizationRouter)
 const secret = () => process.env.JWT_SECRET || 'nucleus-jwt-secret'
 const COOKIE = {
   httpOnly: true,
@@ -112,7 +117,7 @@ router.post('/profiles', async (req, res) => {
       if (!actor || actor.role !== 'admin') return res.status(403).json({ error: 'Admin required' })
     }
 
-    const { name, role = 'user', pin, emoji, color, pinTemporary } = req.body
+    const { name, role = 'user', pin, emoji, color, pinTemporary, locale } = req.body
     if (!name?.trim()) return res.status(400).json({ error: 'Name is required' })
     if (pin !== undefined && pin !== null && pin !== '') {
       if (!isValidPin(pin)) return res.status(400).json({ error: 'PIN must be exactly 4 characters (0–9, A–F)' })
@@ -141,6 +146,7 @@ router.post('/profiles', async (req, res) => {
       pinTempPlain: isTemp ? String(pin).toUpperCase() : null,
       emoji: emoji ? String(emoji).slice(0, 8) : null,
       color: color || colorFromName(name),
+      locale: locale ? String(locale).slice(0, 20) : null,
     })
     res.status(201).json({
       _id: profile._id, name: profile.name, role: profile.role,
@@ -160,12 +166,14 @@ router.patch('/profiles/:id', requireAuth, async (req, res) => {
     const isOwn = String(req.profile.profileId) === req.params.id
     if (!isOwn && req.profile.role !== 'admin') return res.status(403).json({ error: 'Forbidden' })
 
-    const { name, emoji, color, role } = req.body
+    const { name, emoji, color, role, locale } = req.body
     const update = {}
     if (name !== undefined) update.name = String(name).trim().slice(0, 64)
     if (emoji !== undefined) update.emoji = emoji ? String(emoji).slice(0, 8) : null
     if (color !== undefined) update.color = /^#[0-9a-fA-F]{3,8}$/.test(color) ? color : undefined
     if (role !== undefined && req.profile.role === 'admin') update.role = role === 'admin' ? 'admin' : 'user'
+    // Admin-assigned UI language. `null`/'' clears it (fall back to the default).
+    if (locale !== undefined) update.locale = locale ? String(locale).slice(0, 20) : null
 
     if (update.color === undefined) delete update.color
 

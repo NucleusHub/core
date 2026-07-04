@@ -4,12 +4,14 @@ import logoDark from './assets/nucleus-logo-transparent.png'
 import logoLight from './assets/nucleus-logo-light-1.png'
 import { useRegistry } from './useRegistry.js'
 import { useTheme } from './useTheme.js'
+import { useI18n } from './useI18n.js'
 import { useAuth } from './auth/useAuth.js'
 import AvatarCircle from './auth/AvatarCircle.vue'
 import ProfileSelector from './auth/ProfileSelector.vue'
 import AppIcon from './AppIcon.vue'
 
 const { apps } = useRegistry()
+const { t } = useI18n()
 const NAV_ITEMS = computed(() =>
   apps.value
     .filter(a => a.hub?.showInSidebar !== false)
@@ -110,7 +112,7 @@ function openSwitch() {
               :admin="profile.role === 'admin'" :size="32" />
             <div class="flex-1 text-left min-w-0">
               <p class="text-sm font-medium leading-tight truncate">{{ profile.name }}</p>
-              <p class="text-xs text-slate-400 dark:text-slate-500">Switch account</p>
+              <p class="text-xs text-slate-400 dark:text-slate-500">{{ t('core.sidebar.switchAccount') }}</p>
             </div>
             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
@@ -123,7 +125,7 @@ function openSwitch() {
             <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
               <path d="M12 2L3 6v6c0 5.25 3.75 10.15 9 11.35C17.25 22.15 21 17.25 21 12V6l-9-4z" />
             </svg>
-            Admin Console
+            {{ t('core.sidebar.adminConsole') }}
           </a>
         </div>
 
@@ -131,17 +133,17 @@ function openSwitch() {
         <div class="px-3 py-3 border-t border-white/40 dark:border-white/8">
           <div class="flex bg-black/5 dark:bg-white/8 rounded-lg p-0.5 gap-0.5">
             <button
-              v-for="t in THEMES"
-              :key="t.key"
-              @click="setTheme(t.key)"
-              :title="t.label"
+              v-for="themeOpt in THEMES"
+              :key="themeOpt.key"
+              @click="setTheme(themeOpt.key)"
+              :title="t(`core.theme.${themeOpt.key}`)"
               :class="['cursor-pointer flex-1 flex items-center justify-center py-1.5 rounded-md transition-colors',
-                theme === t.key
+                theme === themeOpt.key
                   ? 'bg-white/80 dark:bg-white/20 text-slate-900 dark:text-white shadow-sm'
                   : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-white']"
             >
               <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" :d="t.icon" />
+                <path stroke-linecap="round" stroke-linejoin="round" :d="themeOpt.icon" />
               </svg>
             </button>
           </div>

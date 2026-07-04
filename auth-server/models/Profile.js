@@ -27,6 +27,9 @@ const profileSchema = new mongoose.Schema({
   color:       { type: String, required: true },
   lastLoginAt: { type: Date, default: null },
   isGuest:     { type: Boolean, default: false },
+  // Admin-assigned UI language (BCP-47 tag, e.g. 'cs-CZ'). null = fall back to
+  // the instance default language. See core/auth-server/routes/localization.js.
+  locale:      { type: String, default: null },
 }, { timestamps: true })
 
 export default mongoose.model('Profile', profileSchema)

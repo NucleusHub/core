@@ -1,0 +1,13 @@
+{
+  "core.theme.light": "Light",
+  "core.theme.system": "System",
+  "core.theme.dark": "Dark",
+  "core.sidebar.switchAccount": "Switch account",
+  "core.sidebar.adminConsole": "Admin Console",
+  "core.button.save": "Save",
+  "core.button.cancel": "Cancel",
+  "core.button.close": "Close",
+  "core.button.confirm": "Confirm",
+  "core.button.delete": "Delete",
+  "core.error.permissionDenied": "Permission denied"
+}

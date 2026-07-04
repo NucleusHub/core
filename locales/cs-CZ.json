@@ -1,0 +1,13 @@
+{
+  "core.theme.light": "Světlý",
+  "core.theme.system": "Systém",
+  "core.theme.dark": "Tmavý",
+  "core.sidebar.switchAccount": "Přepnout účet",
+  "core.sidebar.adminConsole": "Administrace",
+  "core.button.save": "Uložit",
+  "core.button.cancel": "Zrušit",
+  "core.button.close": "Zavřít",
+  "core.button.confirm": "Potvrdit",
+  "core.button.delete": "Smazat",
+  "core.error.permissionDenied": "Přístup odepřen"
+}

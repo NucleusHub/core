@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
 import bcrypt from 'bcryptjs'
 import Profile, { colorFromName } from '../models/Profile.js'
+import LocaleConfig from '../models/LocaleConfig.js'
 
 export async function runMigrations() {
   const db = mongoose.connection.db
@@ -11,6 +12,18 @@ export async function runMigrations() {
   if (!guest) {
     await Profile.create({ name: 'Guest', role: 'user', isGuest: true, color: '#6b7280' })
     console.log('[migration] Guest profile created')
+  }
+
+  // Ensure the singleton localization config exists (base language installed
+  // and enabled for core). See core/auth-server/routes/localization.js.
+  const localeConfig = await LocaleConfig.findOne()
+  if (!localeConfig) {
+    await LocaleConfig.create({
+      installedLanguages: ['en-US'],
+      defaultLanguage: 'en-US',
+      enabled: { core: ['en-US'] },
+    })
+    console.log('[migration] LocaleConfig created')
   }
 
   // Assign legacy data (docs without profileId) to Honzyk

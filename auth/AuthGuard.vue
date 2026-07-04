@@ -1,12 +1,18 @@
 <script setup>
 import { onMounted } from 'vue'
 import { useAuth } from './useAuth.js'
+import { initI18n } from '../useI18n.js'
 import ProfileSelector from './ProfileSelector.vue'
 import MaintenanceBanner from '../MaintenanceBanner.vue'
 
 const { isAuthenticated, checked, checkSession } = useAuth()
 
-onMounted(checkSession)
+onMounted(() => {
+  checkSession()
+  // Start localization once, from the one component every app wraps in — the
+  // app scope is derived from the bundle's base path. See core/useI18n.js.
+  initI18n()
+})
 </script>
 
 <template>
