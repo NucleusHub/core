@@ -77,7 +77,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 onBeforeUnmount(() => clearTimeout(rateLimitTimer.value))
 
 async function loadProfiles() {
-  const res = await fetch('/api/auth/profiles', { credentials: 'include' })
+  // picker=1: this is the account picker — guests may see the list here.
+  const res = await fetch('/api/auth/profiles?picker=1', { credentials: 'include' })
   profiles.value = res.ok ? await res.json() : []
 }
 

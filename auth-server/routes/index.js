@@ -9,6 +9,7 @@ import UserOverride from '../models/UserOverride.js'
 import Group from '../models/Group.js'
 import GroupOverride from '../models/GroupOverride.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
+import { resolveViewer, filterProfiles } from '../visibility.js'
 import localizationRouter from './localization.js'
 import maintenanceRouter from './maintenance.js'
 
@@ -85,7 +86,7 @@ router.get('/profiles', async (req, res) => {
         if (!b.lastLoginAt) return -1
         return new Date(b.lastLoginAt) - new Date(a.lastLoginAt)
       })
-    res.json([...regular, ...guests].map(p => ({
+    const mapped = [...regular, ...guests].map(p => ({
       _id: p._id,
       name: p.name,
       role: p.role,
@@ -94,7 +95,15 @@ router.get('/profiles', async (req, res) => {
       hasPin: !!p.pin,
       pinTemporary: !!p.pinTemporary,
       isGuest: p.isGuest,
-    })))
+    }))
+    // Group-visibility filter (Home/Garaz) — self-contained, see ../visibility.js.
+    // No-op unless state/visibility.json lists groups. The debug header echoes the
+    // IP the server sees for this device, so you can fill visibility.json.ips.
+    const viewer = resolveViewer(req)
+    res.set('X-Nucleus-Viewer-Ip', viewer.ip || '')
+    // ?picker=1 → profile picker / account switcher: guests may see the list.
+    const picker = req.query.picker === '1' || req.query.picker === 'true'
+    res.json(filterProfiles(mapped, viewer, { picker }))
   } catch {
     res.status(500).json({ error: 'Server error' })
   }
