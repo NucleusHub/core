@@ -36,7 +36,6 @@ const { isDark } = useTheme()
 
   background: rgba(255, 255, 255, 0.62);
   backdrop-filter: blur(20px) saturate(1.6);
-  -webkit-backdrop-filter: blur(20px) saturate(1.6);
   border: 1px solid rgba(255, 255, 255, 0.72);
   box-shadow:
     0 8px 28px rgba(15, 23, 42, 0.13),
@@ -47,7 +46,6 @@ const { isDark } = useTheme()
 .app-header.is-dark {
   background: rgba(45, 28, 78, 0.82);
   backdrop-filter: blur(20px) saturate(1.3);
-  -webkit-backdrop-filter: blur(20px) saturate(1.3);
   border-color: rgba(160, 120, 255, 0.20);
   box-shadow:
     0 4px 32px rgba(0, 0, 0, 0.5),

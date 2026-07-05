@@ -98,7 +98,6 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
   border: 1px solid rgba(180, 83, 9, 0.45);
   box-shadow: 0 10px 30px -6px rgba(120, 53, 15, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.25) inset;
   backdrop-filter: blur(14px) saturate(1.4);
-  -webkit-backdrop-filter: blur(14px) saturate(1.4);
 }
 
 .mnt-pulse {
