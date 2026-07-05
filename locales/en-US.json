@@ -9,5 +9,7 @@
   "core.button.close": "Close",
   "core.button.confirm": "Confirm",
   "core.button.delete": "Delete",
-  "core.error.permissionDenied": "Permission denied"
+  "core.error.permissionDenied": "Permission denied",
+  "core.maintenance.title": "Nucleus is being updated",
+  "core.maintenance.defaultMessage": "The environment is being rebuilt and will be briefly unresponsive. File uploads and any changes may not be saved right now."
 }

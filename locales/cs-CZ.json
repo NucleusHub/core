@@ -9,5 +9,7 @@
   "core.button.close": "Zavřít",
   "core.button.confirm": "Potvrdit",
   "core.button.delete": "Smazat",
-  "core.error.permissionDenied": "Přístup odepřen"
+  "core.error.permissionDenied": "Přístup odepřen",
+  "core.maintenance.title": "Probíhá aktualizace Nucleus",
+  "core.maintenance.defaultMessage": "Prostředí se přestavuje a bude chvíli nedostupné. Nahrávání souborů a jakékoli změny se nyní nemusí uložit."
 }

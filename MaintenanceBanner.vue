@@ -5,13 +5,29 @@
 // an app API or socket. That's deliberate: during a rebuild the app servers are
 // the thing going down, but nginx (and this static file) stays up, so the banner
 // keeps showing for the whole outage. Flip it with `infra/maintenance on|off`.
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useI18n } from './useI18n.js'
 
 const POLL_MS = 8000
 
+const { t, locale } = useI18n()
+
 const active = ref(false)
-const message = ref('')
+const flag = ref(null)
 let timer = null
+
+// The flag carries title/message either as a plain string (legacy infra CLI) or
+// as a { lang: text } map (admin console, translated per language). Resolve to
+// the viewer's locale, then the flag's default language, then any value.
+function pick(field) {
+  if (field == null) return ''
+  if (typeof field === 'string') return field
+  if (typeof field !== 'object') return String(field)
+  return field[locale.value] ?? field[flag.value?.defaultLang] ?? Object.values(field)[0] ?? ''
+}
+
+const title = computed(() => pick(flag.value?.title) || t('core.maintenance.title'))
+const message = computed(() => pick(flag.value?.message) || t('core.maintenance.defaultMessage'))
 
 async function poll() {
   try {
@@ -19,7 +35,7 @@ async function poll() {
     if (!res.ok) { active.value = false; return }   // 204/404 → not in maintenance
     const data = await res.json()
     active.value = !!data.active
-    message.value = data.message || ''
+    flag.value = data
   } catch {
     // Explicit-flag-only: a failed fetch is NOT treated as maintenance, so a
     // transient blip never flashes the banner.
@@ -47,10 +63,8 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
           </svg>
         </span>
         <div class="mnt-text">
-          <p class="mnt-title">Nucleus is being updated</p>
-          <p class="mnt-msg">
-            {{ message || 'The environment is being rebuilt and will be briefly unresponsive. File uploads and any changes may not be saved right now.' }}
-          </p>
+          <p class="mnt-title">{{ title }}</p>
+          <p class="mnt-msg">{{ message }}</p>
         </div>
       </div>
     </div>

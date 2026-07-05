@@ -10,12 +10,17 @@ import Group from '../models/Group.js'
 import GroupOverride from '../models/GroupOverride.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import localizationRouter from './localization.js'
+import maintenanceRouter from './maintenance.js'
 
 const router = Router()
 
 // Core localization service (catalogs, config, admin management) at
 // /api/auth/i18n/* — see routes/localization.js.
 router.use('/i18n', localizationRouter)
+
+// Maintenance-banner control (presets + on/off) at /api/auth/maintenance/* —
+// see routes/maintenance.js.
+router.use('/maintenance', maintenanceRouter)
 const secret = () => process.env.JWT_SECRET || 'nucleus-jwt-secret'
 const COOKIE = {
   httpOnly: true,
