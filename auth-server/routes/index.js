@@ -95,6 +95,7 @@ router.get('/profiles', async (req, res) => {
       hasPin: !!p.pin,
       pinTemporary: !!p.pinTemporary,
       isGuest: p.isGuest,
+      locale: p.locale,
     }))
     // Group-visibility filter (Home/Garaz) — self-contained, see ../visibility.js.
     // No-op unless state/visibility.json lists groups. The debug header echoes the
