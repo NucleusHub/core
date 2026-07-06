@@ -56,13 +56,17 @@ router.get('/catalog', async (req, res) => {
     const app = (req.query.app || 'core').toString()
     const lang = (req.query.lang || cfg.defaultLanguage || BASE_LANG).toString()
     const ov = await loadOverrides(lang)
-    const messages = resolveCatalog(app, lang, ov)
+    // Gate translation on the admin enable-per-app matrix: a scope whose
+    // requested language isn't enabled renders in English (the base language).
+    const enabled = enabledObj(cfg)
+    const messages = resolveCatalog(app, lang, ov, enabled)
+    const appEnabled = (enabled[app] || (app === 'core' ? [BASE_LANG] : [])).includes(lang)
     const overrideCount = await LocaleOverride.estimatedDocumentCount()
     res.json({
       app,
       lang,
       fallbackLang: BASE_LANG,
-      availableForApp: app === 'core' || availableLangs(app).includes(lang),
+      availableForApp: lang === BASE_LANG || (app === 'core' || availableLangs(app).includes(lang)) && appEnabled,
       version: catalogVersion(cfg, overrideCount),
       messages,
     })

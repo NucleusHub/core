@@ -9,6 +9,12 @@
   "core.button.close": "Close",
   "core.button.confirm": "Confirm",
   "core.button.delete": "Delete",
+  "core.echo.send": "Send",
+  "core.echo.messagePlaceholder": "Message…",
+  "core.echo.add": "Add",
+  "core.echo.added": "Added",
+  "core.echo.failed": "Failed",
+  "core.echo.unsupportedType": "Unsupported message type",
   "core.error.permissionDenied": "Permission denied",
   "core.maintenance.title": "Nucleus is being updated",
   "core.maintenance.defaultMessage": "The environment is being rebuilt and will be briefly unresponsive. File uploads and any changes may not be saved right now."

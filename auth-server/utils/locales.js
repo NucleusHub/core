@@ -91,31 +91,47 @@ export function availableLangs(scope) {
   return [...set].sort((a, b) => (a === BASE_LANG ? -1 : b === BASE_LANG ? 1 : a.localeCompare(b)))
 }
 
+// The language a given scope actually renders in. It's the requested `lang`
+// only when that language is enabled for the scope in the admin matrix;
+// otherwise the scope falls back to the base (untranslated) language — i.e.
+// disabling a language for an app in Admin makes that app render in English.
+// When `enabledByScope` is null the gate is off and every scope uses `lang`
+// (legacy behaviour, and what non-catalog callers get).
+function effectiveLang(scope, lang, enabledByScope) {
+  if (lang === BASE_LANG || !enabledByScope) return lang
+  const enabled = enabledByScope[scope] || []
+  return enabled.includes(lang) ? lang : BASE_LANG
+}
+
 // Resolve the flat, ready-to-use message map for an app's client: merges the
 // 'core' scope with the app's own scope, applying overrides then the per-key
 // fallback chain: override[lang] → base[lang] → override[en] → base[en] → key.
 // `ov` is { [lang]: { key: value } } and need only contain `lang` + BASE_LANG.
-export function resolveCatalog(app, lang, ov = {}) {
+// `enabledByScope` ({ scope: [langs] }) gates translation per scope: a scope
+// whose requested language isn't enabled resolves to BASE_LANG instead.
+export function resolveCatalog(app, lang, ov = {}, enabledByScope = null) {
   const { index } = build()
   const scopes = ['core']
   if (app && app !== 'core') scopes.push(app)
   const messages = {}
 
   for (const scope of scopes) {
+    const eff = effectiveLang(scope, lang, enabledByScope)
     const byLang = index[scope] || {}
     const base = byLang[BASE_LANG] || {}
-    const loc = byLang[lang] || {}
+    const loc = byLang[eff] || {}
     for (const key of new Set([...Object.keys(base), ...Object.keys(loc)])) {
-      messages[key] = ov[lang]?.[key] ?? loc[key] ?? ov[BASE_LANG]?.[key] ?? base[key] ?? key
+      messages[key] = ov[eff]?.[key] ?? loc[key] ?? ov[BASE_LANG]?.[key] ?? base[key] ?? key
     }
-  }
 
-  // Include override-only keys that belong to one of our scopes but aren't in
-  // any shipped file (an admin can override a key before it's added to disk).
-  const inScope = key => scopes.some(s => key === s || key.startsWith(`${s}.`))
-  for (const oLang of new Set([lang, BASE_LANG])) {
-    for (const key of Object.keys(ov[oLang] || {})) {
-      if (!(key in messages) && inScope(key)) messages[key] = ov[lang]?.[key] ?? ov[BASE_LANG]?.[key]
+    // Include override-only keys that belong to this scope but aren't in any
+    // shipped file (an admin can override a key before it's added to disk).
+    for (const oLang of new Set([eff, BASE_LANG])) {
+      for (const key of Object.keys(ov[oLang] || {})) {
+        if ((key === scope || key.startsWith(`${scope}.`)) && !(key in messages)) {
+          messages[key] = ov[eff]?.[key] ?? ov[BASE_LANG]?.[key]
+        }
+      }
     }
   }
   return messages

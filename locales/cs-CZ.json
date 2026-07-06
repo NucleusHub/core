@@ -9,6 +9,12 @@
   "core.button.close": "Zavřít",
   "core.button.confirm": "Potvrdit",
   "core.button.delete": "Smazat",
+  "core.echo.send": "Odeslat",
+  "core.echo.messagePlaceholder": "Zpráva…",
+  "core.echo.add": "Přidat",
+  "core.echo.added": "Přidáno",
+  "core.echo.failed": "Nepodařilo se",
+  "core.echo.unsupportedType": "Nepodporovaný typ zprávy",
   "core.error.permissionDenied": "Přístup odepřen",
   "core.maintenance.title": "Probíhá aktualizace Nucleus",
   "core.maintenance.defaultMessage": "Prostředí se přestavuje a bude chvíli nedostupné. Nahrávání souborů a jakékoli změny se nyní nemusí uložit."

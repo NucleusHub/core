@@ -1,13 +1,16 @@
 <script setup>
 import { ref } from 'vue'
+import { useI18n } from '../useI18n.js'
+
+const { t } = useI18n()
 
 // Small "Add to my <app>" button for embed cards. Runs the supplied async
 // handler (which calls the owning app's API) and reflects idle → loading →
 // done / error state. The DB write itself lives in the respective app.
 const props = defineProps({
   handler: { type: Function, required: true },
-  label: { type: String, default: 'Add' },
-  doneLabel: { type: String, default: 'Added' },
+  label: { type: String, default: '' },
+  doneLabel: { type: String, default: '' },
 })
 
 const state = ref('idle') // idle | loading | done | error
@@ -41,6 +44,6 @@ async function click() {
     <svg v-if="state === 'done'" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
     <svg v-else-if="state === 'loading'" class="animate-spin" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
     <svg v-else viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-    <span>{{ state === 'done' ? doneLabel : state === 'error' ? 'Failed' : label }}</span>
+    <span>{{ state === 'done' ? (doneLabel || t('core.echo.added')) : state === 'error' ? t('core.echo.failed') : (label || t('core.echo.add')) }}</span>
   </button>
 </template>
