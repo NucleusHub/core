@@ -12,6 +12,7 @@ import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { resolveViewer, filterProfiles } from '../visibility.js'
 import localizationRouter from './localization.js'
 import maintenanceRouter from './maintenance.js'
+import whatsNewRouter from './whatsNew.js'
 
 const router = Router()
 
@@ -22,6 +23,10 @@ router.use('/i18n', localizationRouter)
 // Maintenance-banner control (presets + on/off) at /api/auth/maintenance/* —
 // see routes/maintenance.js.
 router.use('/maintenance', maintenanceRouter)
+
+// "What's New" changelog (feed + per-user seen state + admin CRUD) at
+// /api/auth/whats-new/* — see routes/whatsNew.js.
+router.use('/whats-new', whatsNewRouter)
 const secret = () => process.env.JWT_SECRET || 'nucleus-jwt-secret'
 const COOKIE = {
   httpOnly: true,
@@ -181,6 +186,9 @@ router.post('/profiles', async (req, res) => {
       emoji: emoji ? String(emoji).slice(0, 8) : null,
       color: color || colorFromName(name),
       locale: locale ? String(locale).slice(0, 20) : null,
+      // Start caught up: a brand-new profile never gets the What's New modal on
+      // first login, only announcements published after they joined.
+      whatsNew: { lastSeenAt: new Date() },
     })
     res.status(201).json({
       _id: profile._id, name: profile.name, role: profile.role,

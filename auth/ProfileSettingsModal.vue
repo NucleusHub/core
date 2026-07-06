@@ -177,6 +177,31 @@ async function onPinComplete(pin) {
   await submitPin(pin)
 }
 
+// ── What's New (update logs) ───────────────────────────────────────────────
+// The auto-open toggle is the inverse of the profile's whatsNew.optOut flag.
+const showUpdates = ref(!(props.profile.whatsNew?.optOut))
+const savingUpdates = ref(false)
+
+async function toggleUpdates() {
+  const next = !showUpdates.value
+  showUpdates.value = next
+  savingUpdates.value = true
+  try {
+    const res = await authFetch('/api/auth/whats-new/opt-out', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ optOut: !next }),
+    })
+    if (!res.ok) throw new Error()
+    await checkSession()   // keep the shared profile ref in sync
+    emit('updated')
+  } catch {
+    showUpdates.value = !next   // revert on failure
+  } finally {
+    savingUpdates.value = false
+  }
+}
+
 async function submitPin(newPin) {
   savingPin.value = true
   pinError.value = null
@@ -329,6 +354,28 @@ async function submitPin(newPin) {
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
               {{ t('core.button.cancel') }}
+            </button>
+          </div>
+        </div>
+
+        <!-- What's New -->
+        <div class="pt-4 border-t border-white/30 dark:border-white/8">
+          <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/35 mb-2">{{ t('core.whatsNew.launch') }}</label>
+          <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0">
+              <p class="text-xs font-medium text-slate-700 dark:text-white/70">{{ t('core.whatsNew.showUpdates') }}</p>
+              <p class="text-[11px] text-slate-400 dark:text-white/40 mt-0.5">{{ t('core.whatsNew.showUpdatesHint') }}</p>
+            </div>
+            <button
+              type="button" role="switch" :aria-checked="showUpdates" :disabled="savingUpdates"
+              class="relative shrink-0 w-10 h-6 rounded-full transition-colors cursor-pointer disabled:opacity-50"
+              :class="showUpdates ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-white/15'"
+              @click="toggleUpdates"
+            >
+              <span
+                class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform"
+                :class="showUpdates ? 'translate-x-4' : ''"
+              />
             </button>
           </div>
         </div>

@@ -36,6 +36,15 @@ const profileSchema = new mongoose.Schema({
   // Admin-assigned UI language (BCP-47 tag, e.g. 'cs-CZ'). null = fall back to
   // the instance default language. See core/auth-server/routes/localization.js.
   locale:      { type: String, default: null },
+  // Per-user state for the "What's New" changelog modal. `lastSeenAt` is when the
+  // user last dismissed it — the modal auto-opens when an announcement was
+  // published more recently. New profiles are seeded to "now" so they start
+  // caught up (no modal on first login). `optOut` permanently silences it.
+  // See core/auth-server/routes/whatsNew.js and core/WhatsNewModal.vue.
+  whatsNew: {
+    lastSeenAt: { type: Date, default: null },
+    optOut:     { type: Boolean, default: false },
+  },
 }, { timestamps: true })
 
 export default mongoose.model('Profile', profileSchema)

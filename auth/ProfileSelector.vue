@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, onBeforeUnmount } from 'vue'
 import { LiquidGlass } from '@zaosoula/liquid-glass-vue/components'
 import { useI18n } from '../useI18n.js'
 import { useAuth } from './useAuth.js'
+import { useWhatsNew } from '../useWhatsNew.js'
 import AvatarCircle from './AvatarCircle.vue'
 import PinInput from './PinInput.vue'
 import ProfileSettingsModal from './ProfileSettingsModal.vue'
@@ -15,6 +16,14 @@ const emit = defineEmits(['close'])
 
 const { t } = useI18n()
 const { login, completeTempLogin, profile: currentProfile } = useAuth()
+const { open: openWhatsNew } = useWhatsNew()
+
+// Open the What's New changelog: close this switcher first so the modal (mounted
+// in AuthGuard) shows on its own.
+function openLog() {
+  emit('close')
+  openWhatsNew()
+}
 
 const profiles = ref([])
 const selected = ref(null)
@@ -224,6 +233,15 @@ async function createProfile() {
 
       <!-- Corner controls: settings (own profile) + close -->
       <div v-if="closeable && !selected && !creating" class="absolute top-4 right-4 z-10 flex items-center gap-2.5">
+        <button v-if="currentProfile"
+          @click="openLog"
+          :title="t('core.whatsNew.launch')" :aria-label="t('core.whatsNew.launch')"
+          class="w-11 h-11 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-colors cursor-pointer">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3l1.9 4.8L18.7 9.7 13.9 11.6 12 16.4 10.1 11.6 5.3 9.7 10.1 7.8z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z" />
+          </svg>
+        </button>
         <button v-if="currentProfile && !currentProfile.isGuest"
           @click="settingsFor = { ...currentProfile }"
           :title="t('core.profiles.settings')" :aria-label="t('core.profiles.settings')"

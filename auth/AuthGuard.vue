@@ -4,6 +4,7 @@ import { useAuth } from './useAuth.js'
 import { initI18n } from '../useI18n.js'
 import ProfileSelector from './ProfileSelector.vue'
 import MaintenanceBanner from '../MaintenanceBanner.vue'
+import WhatsNewModal from '../WhatsNewModal.vue'
 
 const { isAuthenticated, checked, checkSession } = useAuth()
 
@@ -25,6 +26,10 @@ onMounted(() => {
   </template>
   <template v-else-if="isAuthenticated">
     <slot />
+    <!-- What's New changelog — auto-opens on login when there's an unseen
+         announcement; also opened from the sidebar launcher. Authenticated only,
+         so it can read the viewer's profile.whatsNew state. -->
+    <WhatsNewModal />
   </template>
   <ProfileSelector v-else />
 </template>

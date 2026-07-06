@@ -50,7 +50,7 @@ export async function runMigrations() {
   // Ensure Guest profile always exists
   const guest = await Profile.findOne({ isGuest: true })
   if (!guest) {
-    await Profile.create({ name: 'Guest', role: 'user', isGuest: true, color: '#6b7280' })
+    await Profile.create({ name: 'Guest', role: 'user', isGuest: true, color: '#6b7280', whatsNew: { lastSeenAt: new Date() } })
     console.log('[migration] Guest profile created')
   }
 

@@ -6,6 +6,7 @@ import { useRegistry } from './useRegistry.js'
 import { useTheme } from './useTheme.js'
 import { useI18n } from './useI18n.js'
 import { useAuth } from './auth/useAuth.js'
+import { useWhatsNew } from './useWhatsNew.js'
 import AvatarCircle from './auth/AvatarCircle.vue'
 import ProfileSelector from './auth/ProfileSelector.vue'
 import AppIcon from './AppIcon.vue'
@@ -44,11 +45,17 @@ const { theme, isDark, setTheme } = useTheme()
 const logoUrl = computed(() => isDark.value ? logoDark : logoLight)
 
 const { profile } = useAuth()
+const { open: openWhatsNew } = useWhatsNew()
 const showSwitch = ref(false)
 
 function openSwitch() {
   emit('close')
   showSwitch.value = true
+}
+
+function launchWhatsNew() {
+  emit('close')
+  openWhatsNew()
 }
 </script>
 
@@ -116,6 +123,15 @@ function openSwitch() {
             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
             </svg>
+          </button>
+        </div>
+
+        <div v-if="profile" class="sidebar-footer">
+          <button class="admin-btn" :class="{ 'theme-light': !isDark }" @click="launchWhatsNew">
+            <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12 2l2.09 5.26L19.5 9.3l-5.41 2.04L12 16.6l-2.09-5.26L4.5 9.3l5.41-2.04L12 2z" />
+            </svg>
+            {{ t('core.whatsNew.launch') }}
           </button>
         </div>
 
