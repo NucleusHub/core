@@ -17,6 +17,18 @@ export function getRecentProfileIds() {
   } catch { return [] }
 }
 
+// Build the URL for a profile's uploaded avatar, or null when it has none.
+// Accepts any profile-shaped object exposing `hasImage` + an id (`_id` or
+// `profileId`). The imageUpdatedAt timestamp cache-busts the (immutable)
+// avatar endpoint so a freshly changed photo shows without a hard reload.
+export function avatarUrl(p) {
+  if (!p || !p.hasImage) return null
+  const id = p._id || p.profileId
+  if (!id) return null
+  const v = p.imageUpdatedAt ? new Date(p.imageUpdatedAt).getTime() : ''
+  return `/api/auth/profiles/${id}/avatar${v ? `?v=${v}` : ''}`
+}
+
 async function checkSession() {
   try {
     const res = await fetch('/api/auth/me', { credentials: 'include' })

@@ -18,6 +18,9 @@ const props = defineProps({
   searchPlaceholder: { type: String, default: 'Search…' },
   // Padding for the scroll body in chrome mode (tree pickers want it tighter).
   bodyClass: { type: String, default: 'px-5 pb-5 pt-1' },
+  // Stacking layer for the overlay. Raise it (e.g. z-[600]) when the modal must
+  // sit above another full-screen overlay such as the profile selector (z-500).
+  z: { type: String, default: 'z-[200]' },
 })
 const emit = defineEmits(['confirm', 'cancel', 'update:search'])
 
@@ -53,7 +56,7 @@ onUnmounted(() => {
 <template>
   <Teleport to="body">
     <Transition name="fade">
-      <div v-if="show" class="fixed inset-0 z-[200] flex items-center justify-center p-4">
+      <div v-if="show" class="fixed inset-0 flex items-center justify-center p-4" :class="z">
         <div class="absolute inset-0 bg-black/20 backdrop-blur-xl" @pointerdown.prevent="$emit('cancel')" />
         <div
           class="relative bg-white/25 dark:bg-white/8 border border-white/50 dark:border-white/10 rounded-2xl shadow-2xl w-full overflow-hidden"

@@ -1,9 +1,11 @@
 <script setup>
 import { ref, onMounted, onUnmounted, onBeforeUnmount } from 'vue'
 import { LiquidGlass } from '@zaosoula/liquid-glass-vue/components'
+import { useI18n } from '../useI18n.js'
 import { useAuth } from './useAuth.js'
 import AvatarCircle from './AvatarCircle.vue'
 import PinInput from './PinInput.vue'
+import ProfileSettingsModal from './ProfileSettingsModal.vue'
 
 const props = defineProps({
   closeable: { type: Boolean, default: false },
@@ -11,6 +13,7 @@ const props = defineProps({
 })
 const emit = defineEmits(['close'])
 
+const { t } = useI18n()
 const { login, completeTempLogin, profile: currentProfile } = useAuth()
 
 const profiles = ref([])
@@ -49,10 +52,21 @@ const createError = ref(null)
 // closing the PIN field closes the whole overlay.
 const pinOnly = ref(false)
 
+// Self-service settings for the signed-in profile (name / color / PIN). Never
+// for guests. Holds the profile object being edited, or null when closed.
+const settingsFor = ref(null)
+
+async function onSettingsUpdated() {
+  // Reflect the edited name/color on the grid card immediately.
+  await loadProfiles()
+  const p = profiles.value.find(x => x._id === settingsFor.value?._id)
+  if (p) settingsFor.value = { ...settingsFor.value, ...p }
+}
+
 onMounted(async () => {
   const storedUntil = parseInt(localStorage.getItem(RATE_LIMIT_KEY) || '0', 10)
   if (storedUntil > Date.now()) {
-    pinError.value = 'Too many attempts — try again in 15 minutes'
+    pinError.value = t('core.profiles.tooManyAttempts')
     applyRateLimit(storedUntil - Date.now())
   }
 
@@ -66,6 +80,9 @@ onMounted(async () => {
 
 function onKeydown(e) {
   if (e.key !== 'Escape') return
+  // The settings modal handles its own Escape (TemplateModal); don't also close
+  // the whole selector underneath it.
+  if (settingsFor.value) return
   if (creating.value) { creating.value = false; return }
   if (settingNewPin.value) { cancelNewPin(); return }
   if (selected.value) { pinOnly.value ? emit('close') : back(); return }
@@ -148,7 +165,7 @@ async function onNewPin(pin) {
   if (pin !== firstNewPin.value) {
     firstNewPin.value = ''
     newPinStep.value = 'enter'
-    pinError.value = "PINs didn't match — try again"
+    pinError.value = t('core.profiles.pinsDontMatch')
     return
   }
   try {
@@ -166,7 +183,7 @@ function handlePinError(err) {
   if (err.status === 429 || err.message?.toLowerCase().includes('too many')) {
     const until = Date.now() + 15 * 60 * 1000
     localStorage.setItem(RATE_LIMIT_KEY, String(until))
-    pinError.value = 'Too many attempts — try again in 15 minutes'
+    pinError.value = t('core.profiles.tooManyAttempts')
     applyRateLimit(15 * 60 * 1000)
   } else {
     pinError.value = err.message
@@ -180,7 +197,7 @@ function handlePinError(err) {
 
 async function createProfile() {
   createError.value = null
-  if (!newName.value.trim()) { createError.value = 'Name is required'; return }
+  if (!newName.value.trim()) { createError.value = t('core.profiles.nameRequired'); return }
   const body = { name: newName.value.trim(), role: 'user' }
   if (newPin.value) body.pin = newPin.value.toUpperCase()
   const res = await fetch('/api/auth/profiles', {
@@ -205,19 +222,29 @@ async function createProfile() {
       <div class="absolute inset-0 bg-black/15 backdrop-blur-2xl"
         @click="closeable && (pinOnly || (!selected && !creating)) ? emit('close') : null" />
 
-      <!-- Global close button -->
-      <button v-if="closeable && !selected && !creating"
-        @click="emit('close')"
-        class="absolute top-4 right-4 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-colors cursor-pointer">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-          <path d="M1 1l12 12M13 1L1 13" />
-        </svg>
-      </button>
+      <!-- Corner controls: settings (own profile) + close -->
+      <div v-if="closeable && !selected && !creating" class="absolute top-4 right-4 z-10 flex items-center gap-2.5">
+        <button v-if="currentProfile && !currentProfile.isGuest"
+          @click="settingsFor = { ...currentProfile }"
+          :title="t('core.profiles.settings')" :aria-label="t('core.profiles.settings')"
+          class="w-11 h-11 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-colors cursor-pointer">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+          </svg>
+        </button>
+        <button @click="emit('close')" :aria-label="t('core.button.close')"
+          class="w-11 h-11 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-colors cursor-pointer">
+          <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M1 1l12 12M13 1L1 13" />
+          </svg>
+        </button>
+      </div>
 
       <!-- Profile grid -->
       <div v-if="!pinOnly" class="relative z-10 flex flex-col items-center gap-8">
-        <h1 class="text-2xl font-bold text-white tracking-tight drop-shadow">Who are you?</h1>
-        <div v-if="loading" class="text-sm text-white/50">Loading…</div>
+        <h1 class="text-2xl font-bold text-white tracking-tight drop-shadow">{{ t('core.profiles.whoAreYou') }}</h1>
+        <div v-if="loading" class="text-sm text-white/50">{{ t('core.profiles.loading') }}</div>
         <div v-else class="flex flex-wrap justify-center gap-4 max-w-xl">
           <div v-for="p in profiles" :key="p._id"
             class="flex flex-col items-center gap-1.5 cursor-pointer"
@@ -229,8 +256,7 @@ async function createProfile() {
                 :displacement-scale="55" :blur-amount="0.08"
                 :saturation="140" :elasticity="0">
                 <div class="flex flex-col items-center gap-2" style="width: 72px">
-                  <AvatarCircle :name="p.name" :color="p.color" :emoji="p.emoji"
-                    :admin="p.role === 'admin'" :size="64" />
+                  <AvatarCircle :profile="p" :size="64" />
                   <span class="text-xs font-semibold text-white w-full truncate text-center" style="text-shadow: none">{{ p.name }}</span>
                 </div>
               </LiquidGlass>
@@ -244,7 +270,7 @@ async function createProfile() {
             </div>
             <span v-if="p._id === currentProfile?._id"
               class="text-[11px] font-semibold tracking-wide px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 whitespace-nowrap">
-              Active
+              {{ t('core.profiles.active') }}
             </span>
           </div>
 
@@ -258,7 +284,7 @@ async function createProfile() {
               :saturation="140" :elasticity="0">
               <div class="flex flex-col items-center gap-2" style="width: 72px">
                 <div class="w-16 h-16 rounded-full border-2 border-dashed border-white/40 flex items-center justify-center text-3xl text-white/50">+</div>
-                <span class="text-xs font-semibold text-white/60 w-full text-center" style="text-shadow: none">Add Profile</span>
+                <span class="text-xs font-semibold text-white/60 w-full text-center" style="text-shadow: none">{{ t('core.profiles.addProfile') }}</span>
               </div>
             </LiquidGlass>
           </div>
@@ -277,8 +303,7 @@ async function createProfile() {
                 <path d="M1 1l12 12M13 1L1 13" />
               </svg>
             </button>
-            <AvatarCircle :name="selected.name" :color="selected.color" :emoji="selected.emoji"
-              :admin="selected.role === 'admin'" :size="76" />
+            <AvatarCircle :profile="selected" :size="76" />
             <p class="font-semibold text-white">{{ selected.name }}</p>
 
             <!-- Normal PIN entry -->
@@ -287,7 +312,7 @@ async function createProfile() {
             <!-- Set-your-own-PIN step (after a one-time PIN) -->
             <template v-else>
               <p class="text-xs text-white/60 text-center -mt-2">
-                {{ newPinStep === 'enter' ? 'Choose your own PIN' : 'Re-enter your new PIN to confirm' }}
+                {{ newPinStep === 'enter' ? t('core.profiles.chooseOwnPin') : t('core.profiles.confirmNewPin') }}
               </p>
               <PinInput :key="newPinStep" :error="pinError" @complete="onNewPin" />
               <button @click="cancelNewPin"
@@ -295,7 +320,7 @@ async function createProfile() {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M19 12H5M12 19l-7-7 7-7" />
                 </svg>
-                Back
+                {{ t('core.button.back') }}
               </button>
             </template>
           </div>
@@ -314,18 +339,18 @@ async function createProfile() {
                 <path d="M1 1l12 12M13 1L1 13" />
               </svg>
             </button>
-            <h2 class="font-semibold text-white">New Profile</h2>
+            <h2 class="font-semibold text-white">{{ t('core.profiles.newProfile') }}</h2>
             <input v-model="newName"
               class="w-full px-3 py-2 rounded-xl bg-white/15 border border-white/25 text-white placeholder-white/40 outline-none focus:border-violet-400 text-sm transition-colors"
-              placeholder="Name" maxlength="32" />
+              :placeholder="t('core.profiles.name')" maxlength="32" />
             <div class="w-full flex flex-col items-center gap-1">
-              <p class="text-xs text-white/50">PIN (optional)</p>
+              <p class="text-xs text-white/50">{{ t('core.profiles.pinOptional') }}</p>
               <PinInput @complete="pin => newPin = pin" @incomplete="newPin = ''" />
             </div>
             <p v-if="createError" class="text-xs text-red-400">{{ createError }}</p>
             <button @click="createProfile"
               class="w-full py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold transition-colors cursor-pointer">
-              Create
+              {{ t('core.profiles.create') }}
             </button>
           </div>
         </div>
@@ -333,6 +358,14 @@ async function createProfile() {
 
     </div>
   </Teleport>
+
+  <!-- Self-service settings for the signed-in profile (sits above this overlay) -->
+  <ProfileSettingsModal
+    v-if="settingsFor"
+    :profile="settingsFor"
+    @updated="onSettingsUpdated"
+    @close="settingsFor = null"
+  />
 </template>
 
 <style scoped>

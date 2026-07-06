@@ -46,9 +46,8 @@ const time = computed(() => {
   <div v-else :id="`echo-msg-${message.id}`" class="flex w-full items-end gap-2" :class="[isMine ? 'justify-end' : 'justify-start', showTime ? 'mb-2' : '']">
     <AvatarCircle
       v-if="!isMine"
-      :name="sender?.name || '?'"
+      :profile="sender"
       :color="sender?.color || '#64748b'"
-      :emoji="sender?.emoji || null"
       :size="28"
       class="mb-4 shrink-0"
     />

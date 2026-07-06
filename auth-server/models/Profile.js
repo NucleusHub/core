@@ -24,6 +24,12 @@ const profileSchema = new mongoose.Schema({
   // Never exposed by public/self endpoints — admin-only.
   pinTempPlain: { type: String, default: null },
   emoji:       { type: String, default: null },
+  // Optional uploaded avatar, stored as a small square data URL
+  // (data:image/…;base64,…). Resized client-side before upload. When set it
+  // takes precedence over the emoji/initials avatar. Served as raw bytes via
+  // GET /profiles/:id/avatar; never returned inline in list/self responses.
+  image:       { type: String, default: null },
+  imageUpdatedAt: { type: Date, default: null },
   color:       { type: String, required: true },
   lastLoginAt: { type: Date, default: null },
   isGuest:     { type: Boolean, default: false },

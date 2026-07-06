@@ -64,6 +64,23 @@ function isValidPin(pin) {
   return PIN_RE.test(String(pin).toUpperCase())
 }
 
+// Accepted avatar image data URLs, and a hard byte cap (~3MB of base64) that
+// still leaves headroom under the express.json limit. Images are resized
+// client-side, so a well-behaved upload is far smaller than this.
+const IMAGE_DATA_URL_RE = /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/i
+const MAX_IMAGE_LEN = 3_000_000
+
+// Split a data URL into its mime type and decoded bytes, or null if malformed.
+function parseDataUrl(dataUrl) {
+  const m = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i.exec(String(dataUrl))
+  if (!m) return null
+  try {
+    return { mime: m[1], buffer: Buffer.from(m[2], 'base64') }
+  } catch {
+    return null
+  }
+}
+
 // Generate a random 4-character hex one-time PIN (0–9, A–F).
 function randomPin() {
   const chars = '0123456789ABCDEF'
@@ -96,6 +113,8 @@ router.get('/profiles', async (req, res) => {
       pinTemporary: !!p.pinTemporary,
       isGuest: p.isGuest,
       locale: p.locale,
+      hasImage: !!p.image,
+      imageUpdatedAt: p.imageUpdatedAt,
     }))
     // Group-visibility filter (Home/Garaz) — self-contained, see ../visibility.js.
     // No-op unless state/visibility.json lists groups. The debug header echoes the
@@ -181,7 +200,7 @@ router.patch('/profiles/:id', requireAuth, async (req, res) => {
     const isOwn = String(req.profile.profileId) === req.params.id
     if (!isOwn && req.profile.role !== 'admin') return res.status(403).json({ error: 'Forbidden' })
 
-    const { name, emoji, color, role, locale } = req.body
+    const { name, emoji, color, role, locale, image } = req.body
     const update = {}
     if (name !== undefined) update.name = String(name).trim().slice(0, 64)
     if (emoji !== undefined) update.emoji = emoji ? String(emoji).slice(0, 8) : null
@@ -189,6 +208,21 @@ router.patch('/profiles/:id', requireAuth, async (req, res) => {
     if (role !== undefined && req.profile.role === 'admin') update.role = role === 'admin' ? 'admin' : 'user'
     // Admin-assigned UI language. `null`/'' clears it (fall back to the default).
     if (locale !== undefined) update.locale = locale ? String(locale).slice(0, 20) : null
+    // Uploaded avatar: null/'' clears it (back to emoji/initials); otherwise a
+    // validated, size-capped image data URL. imageUpdatedAt drives client-side
+    // cache-busting of the avatar endpoint.
+    if (image !== undefined) {
+      if (image === null || image === '') {
+        update.image = null
+        update.imageUpdatedAt = null
+      } else if (typeof image === 'string' && IMAGE_DATA_URL_RE.test(image)) {
+        if (image.length > MAX_IMAGE_LEN) return res.status(413).json({ error: 'Image too large' })
+        update.image = image
+        update.imageUpdatedAt = new Date()
+      } else {
+        return res.status(400).json({ error: 'Invalid image' })
+      }
+    }
 
     if (update.color === undefined) delete update.color
 
@@ -211,9 +245,31 @@ router.patch('/profiles/:id', requireAuth, async (req, res) => {
       }
     }
 
-    const profile = await Profile.findByIdAndUpdate(req.params.id, update, { new: true }).select('-pin -pinTempPlain')
+    const profile = await Profile.findByIdAndUpdate(req.params.id, update, { new: true })
+      .select('-pin -pinTempPlain -image').lean()
     if (!profile) return res.status(404).json({ error: 'Not found' })
-    res.json(profile)
+    res.json({ ...profile, hasImage: !!profile.imageUpdatedAt })
+  } catch {
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// ── Avatar image ──────────────────────────────────────────────────────────────
+// Serves a profile's uploaded avatar as raw image bytes. Public (no auth) so it
+// renders on the profile picker before sign-in — consistent with the picker,
+// which already exposes names/colors/emoji. Clients cache-bust with ?v=<ts>
+// from imageUpdatedAt, so the response is safely long-lived + immutable.
+
+router.get('/profiles/:id/avatar', async (req, res) => {
+  try {
+    if (!isValidId(req.params.id)) return res.status(400).json({ error: 'Invalid profile ID' })
+    const profile = await Profile.findById(req.params.id).select('image').lean()
+    if (!profile?.image) return res.status(404).json({ error: 'No avatar' })
+    const parsed = parseDataUrl(profile.image)
+    if (!parsed) return res.status(404).json({ error: 'No avatar' })
+    res.set('Content-Type', parsed.mime)
+    res.set('Cache-Control', 'public, max-age=31536000, immutable')
+    res.send(parsed.buffer)
   } catch {
     res.status(500).json({ error: 'Server error' })
   }
@@ -227,18 +283,29 @@ router.patch('/profiles/:id/pin', requireAuth, async (req, res) => {
     const isOwn = String(req.profile.profileId) === req.params.id
     if (!isOwn && req.profile.role !== 'admin') return res.status(403).json({ error: 'Forbidden' })
 
-    const { pin, temporary } = req.body
+    const { pin, currentPin, temporary } = req.body
     if (pin !== undefined && pin !== null && pin !== '') {
       if (!isValidPin(pin)) return res.status(400).json({ error: 'PIN must be exactly 4 characters (0–9, A–F)' })
     }
+
+    const target = await Profile.findById(req.params.id).select('role pin isGuest')
+    if (!target) return res.status(404).json({ error: 'Not found' })
+    // Guests have no credentials — a PIN would be meaningless.
+    if (target.isGuest) return res.status(400).json({ error: 'Guest profiles cannot have a PIN' })
+
+    // Self-service change: re-prove the current PIN before replacing it, so a
+    // walk-up on an already-unlocked session can't silently lock a user out.
+    // (Admins reset other users' PINs via the one-time-PIN endpoint instead.)
+    if (isOwn && target.pin) {
+      const ok = await bcrypt.compare(String(currentPin || '').toUpperCase(), target.pin)
+      if (!ok) return res.status(401).json({ error: 'Wrong current PIN' })
+    }
+
     const pinHash = pin ? await bcrypt.hash(String(pin).toUpperCase(), 10) : null
     // Admins must keep a PIN — clearing it would make the account loginable from
     // the picker with no credentials. Block removing an admin's PIN.
-    if (!pinHash) {
-      const target = await Profile.findById(req.params.id).select('role').lean()
-      if (target?.role === 'admin') {
-        return res.status(400).json({ error: 'Admins must keep a PIN' })
-      }
+    if (!pinHash && target.role === 'admin') {
+      return res.status(400).json({ error: 'Admins must keep a PIN' })
     }
     // This path is the user choosing their own PIN (or clearing it): the PIN
     // becomes permanent and any one-time PIN plaintext is wiped. Admins issue
@@ -248,7 +315,7 @@ router.patch('/profiles/:id/pin', requireAuth, async (req, res) => {
       pinTemporary: !!pinHash && !!temporary,
       pinTempPlain: null,
     })
-    res.json({ ok: true })
+    res.json({ ok: true, hasPin: !!pinHash })
   } catch {
     res.status(500).json({ error: 'Server error' })
   }
@@ -408,6 +475,7 @@ router.post('/login', async (req, res) => {
     res.json({
       _id: profile._id, profileId: profile._id, name: profile.name, role: profile.role,
       emoji: profile.emoji, color: profile.color, pinTemporary: false,
+      hasImage: !!profile.image, imageUpdatedAt: profile.imageUpdatedAt,
     })
   } catch {
     res.status(500).json({ error: 'Server error' })
@@ -455,6 +523,7 @@ router.post('/login/set-pin', async (req, res) => {
     res.json({
       _id: profile._id, profileId: profile._id, name: profile.name, role: profile.role,
       emoji: profile.emoji, color: profile.color, pinTemporary: false,
+      hasImage: !!profile.image, imageUpdatedAt: profile.imageUpdatedAt,
     })
   } catch {
     res.status(500).json({ error: 'Server error' })
@@ -477,8 +546,8 @@ router.get('/me', requireAuth, async (req, res) => {
       res.clearCookie('nucleus_token', { path: '/' })
       return res.status(401).json({ error: 'Profile not found' })
     }
-    const { pin: _pin, pinTempPlain: _tmp, ...safeProfile } = profile
-    res.json({ ...safeProfile, hasPin: !!profile.pin, pinTemporary: !!profile.pinTemporary })
+    const { pin: _pin, pinTempPlain: _tmp, image: _img, ...safeProfile } = profile
+    res.json({ ...safeProfile, hasPin: !!profile.pin, pinTemporary: !!profile.pinTemporary, hasImage: !!profile.image })
   } catch {
     res.status(500).json({ error: 'Server error' })
   }

@@ -108,8 +108,7 @@ function openSwitch() {
         <div v-if="profile" class="px-3 pt-3 pb-1 border-t border-white/40 dark:border-white/8">
           <button @click="openSwitch"
             class="cursor-pointer w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-white/8 transition-colors">
-            <AvatarCircle :name="profile.name" :color="profile.color" :emoji="profile.emoji"
-              :admin="profile.role === 'admin'" :size="32" />
+            <AvatarCircle :profile="profile" :size="32" />
             <div class="flex-1 text-left min-w-0">
               <p class="text-sm font-medium leading-tight truncate">{{ profile.name }}</p>
               <p class="text-xs text-slate-400 dark:text-slate-500">{{ t('core.sidebar.switchAccount') }}</p>
