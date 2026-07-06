@@ -11,7 +11,7 @@ import AvatarCircle from './auth/AvatarCircle.vue'
 import ProfileSelector from './auth/ProfileSelector.vue'
 import AppIcon from './AppIcon.vue'
 
-const { apps } = useRegistry()
+const { apps, hasApp } = useRegistry()
 const { t } = useI18n()
 const NAV_ITEMS = computed(() =>
   apps.value
@@ -19,7 +19,9 @@ const NAV_ITEMS = computed(() =>
     .map(a => ({ label: a.name, to: a.route + '/', description: a.description, iconSvg: a.iconSvg }))
 )
 
-const isAdmin = computed(() => profile.value?.role === 'admin')
+// The Admin Console link needs both an admin-role user AND the admin app to be
+// installed/enabled — otherwise it points at a dead /admin/ route.
+const showAdminLink = computed(() => profile.value?.role === 'admin' && hasApp('admin'))
 
 const props = defineProps({ open: { type: Boolean, default: false } })
 const emit = defineEmits(['close'])
@@ -135,7 +137,7 @@ function launchWhatsNew() {
           </button>
         </div>
 
-        <div v-if="isAdmin" class="sidebar-footer">
+        <div v-if="showAdminLink" class="sidebar-footer">
           <a class="admin-btn" :class="{ 'theme-light': !isDark }" href="/admin/">
             <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
               <path d="M12 2L3 6v6c0 5.25 3.75 10.15 9 11.35C17.25 22.15 21 17.25 21 12V6l-9-4z" />

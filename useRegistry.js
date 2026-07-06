@@ -1,6 +1,10 @@
 import { ref, onMounted } from 'vue'
 
 const apps = ref([])
+// Every installed app, INCLUDING ones disabled for this user — `apps` above has
+// those filtered out. Consumers that must reason about a disabled app (e.g. the
+// AuthGuard mapping the current route to its app id to block access) read this.
+const allApps = ref([])
 const widgets = ref([])
 // Globally-disabled widget ids (incl. cascade). Exposed so renderers that don't
 // read the filtered `widgets` list (e.g. the orbit system nodes) can honour it.
@@ -37,6 +41,7 @@ async function fetchRegistry() {
     }
     disabledWidgetIds.value = offWidgets
     disabledAppIds.value = offApps
+    allApps.value = rawApps
     apps.value = rawApps.filter(a => !offApps.has(a.id))
     widgets.value = rawWidgets.filter(w => !offWidgets.has(w.id))
   } catch (e) {
@@ -48,5 +53,10 @@ async function fetchRegistry() {
 
 export function useRegistry() {
   onMounted(fetchRegistry)
-  return { apps, widgets, disabledWidgetIds, disabledAppIds, loading, error }
+  // Is an app present AND enabled for the current user? `apps` is already
+  // filtered by the global/per-user overrides, so this is the single check any
+  // cross-app UI should use before surfacing a button/link/menu that points at
+  // another app — never assume a sibling app is installed.
+  const hasApp = (id) => apps.value.some(a => a.id === id)
+  return { apps, allApps, widgets, disabledWidgetIds, disabledAppIds, loading, error, hasApp }
 }
