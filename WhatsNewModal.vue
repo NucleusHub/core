@@ -160,43 +160,46 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             </button>
           </div>
 
-          <!-- Tabs — always shown (even for a single app) so each update is
-               visually tied to the app it belongs to. -->
-          <div v-if="tabs.length" class="wn-tabs">
-            <button
-              v-for="tb in tabs" :key="tb.id"
-              class="wn-tab" :class="{ 'wn-tab-active': tb.id === activeTab }"
-              @click="activeTab = tb.id"
-            >
-              <span v-if="tb.id === 'platform'" class="wn-tab-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 3l1.9 4.8L18.7 9.7 13.9 11.6 12 16.4 10.1 11.6 5.3 9.7 10.1 7.8z" />
-                </svg>
-              </span>
-              <AppIcon v-else :svg="tb.iconSvg" class="wn-tab-icon" />
-              {{ tb.name }}
-            </button>
-          </div>
+          <!-- Content: vertical app tabs alongside the body -->
+          <div class="wn-content">
+            <!-- Tabs — always shown (even for a single app) so each update is
+                 visually tied to the app it belongs to. -->
+            <div v-if="tabs.length" class="wn-tabs">
+              <button
+                v-for="tb in tabs" :key="tb.id"
+                class="wn-tab" :class="{ 'wn-tab-active': tb.id === activeTab }"
+                @click="activeTab = tb.id"
+              >
+                <span v-if="tb.id === 'platform'" class="wn-tab-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 3l1.9 4.8L18.7 9.7 13.9 11.6 12 16.4 10.1 11.6 5.3 9.7 10.1 7.8z" />
+                  </svg>
+                </span>
+                <AppIcon v-else :svg="tb.iconSvg" class="wn-tab-icon" />
+                {{ tb.name }}
+              </button>
+            </div>
 
-          <!-- Body -->
-          <div class="wn-body">
-            <p v-if="loaded && !activeGroups.length" class="wn-empty">{{ t('core.whatsNew.emptyState') }}</p>
+            <!-- Body -->
+            <div class="wn-body">
+              <p v-if="loaded && !activeGroups.length" class="wn-empty">{{ t('core.whatsNew.emptyState') }}</p>
 
-            <div v-for="(g, gi) in activeGroups" :key="g.version" class="wn-group" :class="{ 'wn-group-latest': gi === 0 }">
-              <div class="wn-version-row">
-                <span class="wn-version">{{ g.version }}</span>
-                <span v-if="gi === 0" class="wn-latest-badge">{{ t('core.whatsNew.latestBadge') }}</span>
-                <span v-if="g.publishedAt" class="wn-date">{{ fmtDate(g.publishedAt) }}</span>
+              <div v-for="(g, gi) in activeGroups" :key="g.version" class="wn-group" :class="{ 'wn-group-latest': gi === 0 }">
+                <div class="wn-version-row">
+                  <span class="wn-version">{{ g.version }}</span>
+                  <span v-if="gi === 0" class="wn-latest-badge">{{ t('core.whatsNew.latestBadge') }}</span>
+                  <span v-if="g.publishedAt" class="wn-date">{{ fmtDate(g.publishedAt) }}</span>
+                </div>
+                <ul class="wn-features">
+                  <li v-for="(f, i) in g.features" :key="i" class="wn-feature">
+                    <span v-if="f.icon" class="wn-feature-icon" aria-hidden="true">{{ f.icon }}</span>
+                    <div class="min-w-0">
+                      <p class="wn-feature-title">{{ pick(f.title) }}</p>
+                      <p v-if="pick(f.body)" class="wn-feature-body">{{ pick(f.body) }}</p>
+                    </div>
+                  </li>
+                </ul>
               </div>
-              <ul class="wn-features">
-                <li v-for="(f, i) in g.features" :key="i" class="wn-feature">
-                  <span v-if="f.icon" class="wn-feature-icon" aria-hidden="true">{{ f.icon }}</span>
-                  <div class="min-w-0">
-                    <p class="wn-feature-title">{{ pick(f.title) }}</p>
-                    <p v-if="pick(f.body)" class="wn-feature-body">{{ pick(f.body) }}</p>
-                  </div>
-                </li>
-              </ul>
             </div>
           </div>
 
@@ -231,7 +234,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 32rem;
+  max-width: 40rem;
   max-height: min(85vh, 44rem);
   border-radius: 1.25rem;
   overflow: hidden;
@@ -282,35 +285,51 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 }
 .wn-x:hover { background: rgba(15, 23, 42, 0.06); color: #0f172a; }
 
-/* Underline tabs — mirrors the Admin Console nav tab bar. */
-.wn-tabs {
+/* Content row: vertical tab sidebar + scrollable body. */
+.wn-content {
   display: flex;
-  gap: 0.25rem;
-  padding: 0 1rem;
-  overflow-x: auto;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.1);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Vertical tab sidebar. */
+.wn-tabs {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 11rem;
+  padding: 0.75rem 0.6rem;
+  overflow-y: auto;
+  border-right: 1px solid rgba(15, 23, 42, 0.1);
 }
 .wn-tab {
   flex: none;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.65rem 0.55rem;
-  margin-bottom: -1px;
-  border-bottom: 2px solid transparent;
-  font-size: 0.8rem;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border-radius: 0.6rem;
+  border-left: 2px solid transparent;
+  font-size: 0.82rem;
   font-weight: 600;
-  white-space: nowrap;
+  text-align: left;
   color: rgba(15, 23, 42, 0.55);
   cursor: pointer;
-  transition: color 0.13s, border-color 0.13s;
+  transition: color 0.13s, background 0.13s;
 }
-.wn-tab:hover { color: #1e293b; }
-.wn-tab-active { color: #4f46e5; border-bottom-color: #6366f1; }
+.wn-tab:hover { color: #1e293b; background: rgba(15, 23, 42, 0.05); }
+.wn-tab-active {
+  color: #4f46e5;
+  background: rgba(99, 102, 241, 0.1);
+}
 .wn-tab-icon { width: 1rem; height: 1rem; flex: none; }
 
 .wn-body {
   flex: 1;
+  min-width: 0;
   overflow-y: auto;
   padding: 1rem 1.25rem 0.5rem;
 }
@@ -402,7 +421,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
 }
 .dark .wn-header,
-.dark .wn-tabs,
 .dark .wn-footer { border-color: rgba(255, 255, 255, 0.1); }
 .dark .wn-sub,
 .dark .wn-date,
@@ -411,10 +429,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .dark .wn-optout { opacity: 0.6; }
 .dark .wn-x { color: rgba(255, 255, 255, 0.5); }
 .dark .wn-x:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
-.dark .wn-tabs { border-bottom-color: rgba(255, 255, 255, 0.1); }
+.dark .wn-tabs { border-right-color: rgba(255, 255, 255, 0.1); }
 .dark .wn-tab { color: rgba(255, 255, 255, 0.55); }
-.dark .wn-tab:hover { color: #fff; }
-.dark .wn-tab-active { color: #a5b4fc; border-bottom-color: #818cf8; }
+.dark .wn-tab:hover { color: #fff; background: rgba(255, 255, 255, 0.08); }
+.dark .wn-tab-active { color: #a5b4fc; background: rgba(99, 102, 241, 0.22); }
 .dark .wn-version { color: #a5b4fc; background: rgba(99, 102, 241, 0.2); }
 .dark .wn-group-latest {
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.18), rgba(139, 92, 246, 0.12));
