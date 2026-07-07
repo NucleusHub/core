@@ -182,9 +182,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           <div class="wn-body">
             <p v-if="loaded && !activeGroups.length" class="wn-empty">{{ t('core.whatsNew.emptyState') }}</p>
 
-            <div v-for="g in activeGroups" :key="g.version" class="wn-group">
+            <div v-for="(g, gi) in activeGroups" :key="g.version" class="wn-group" :class="{ 'wn-group-latest': gi === 0 }">
               <div class="wn-version-row">
                 <span class="wn-version">{{ g.version }}</span>
+                <span v-if="gi === 0" class="wn-latest-badge">{{ t('core.whatsNew.latestBadge') }}</span>
                 <span v-if="g.publishedAt" class="wn-date">{{ fmtDate(g.publishedAt) }}</span>
               </div>
               <ul class="wn-features">
@@ -316,7 +317,27 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .wn-empty { text-align: center; font-size: 0.9rem; opacity: 0.55; padding: 2.5rem 0; }
 
 .wn-group { margin-bottom: 1.25rem; }
+/* The newest update for the active app tab gets a highlighted card. */
+.wn-group-latest {
+  position: relative;
+  margin: 0 -0.75rem 1.25rem;
+  padding: 0.85rem 0.9rem 0.95rem;
+  border-radius: 0.85rem;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.09), rgba(139, 92, 246, 0.06));
+  border: 1px solid rgba(99, 102, 241, 0.22);
+  box-shadow: 0 1px 3px rgba(99, 102, 241, 0.12);
+}
 .wn-version-row { display: flex; align-items: baseline; gap: 0.6rem; margin-bottom: 0.6rem; }
+.wn-latest-badge {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #fff;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  padding: 0.12rem 0.45rem;
+  border-radius: 0.4rem;
+}
 .wn-version {
   font-size: 0.7rem;
   font-weight: 800;
@@ -395,6 +416,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .dark .wn-tab:hover { color: #fff; }
 .dark .wn-tab-active { color: #a5b4fc; border-bottom-color: #818cf8; }
 .dark .wn-version { color: #a5b4fc; background: rgba(99, 102, 241, 0.2); }
+.dark .wn-group-latest {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.18), rgba(139, 92, 246, 0.12));
+  border-color: rgba(129, 140, 248, 0.35);
+  box-shadow: none;
+}
 .dark .wn-feature-icon { background: rgba(255, 255, 255, 0.08); }
 
 .wn-fade-enter-active, .wn-fade-leave-active { transition: opacity 0.2s ease; }
