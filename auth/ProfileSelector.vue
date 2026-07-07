@@ -225,14 +225,15 @@ async function createProfile() {
 
 <template>
   <Teleport to="body">
-    <div class="fixed inset-0 z-[500] flex items-center justify-center p-4">
+    <div class="fixed inset-0 z-[500] flex flex-col p-4">
 
       <!-- Main backdrop -->
       <div class="absolute inset-0 bg-black/15 backdrop-blur-2xl"
         @click="closeable && (pinOnly || (!selected && !creating)) ? emit('close') : null" />
 
-      <!-- Corner controls: settings (own profile) + close -->
-      <div v-if="closeable && !selected && !creating" class="absolute top-4 right-4 z-10 flex items-center gap-2.5">
+      <!-- Corner controls: settings (own profile) + close. In-flow header row so
+           they never overlap the (potentially tall, wrapping) profile grid on phones. -->
+      <div v-if="closeable && !selected && !creating" class="relative z-10 shrink-0 flex items-center justify-end gap-2.5">
         <button v-if="currentProfile"
           @click="openLog"
           :title="t('core.whatsNew.launch')" :aria-label="t('core.whatsNew.launch')"
@@ -259,8 +260,8 @@ async function createProfile() {
         </button>
       </div>
 
-      <!-- Profile grid -->
-      <div v-if="!pinOnly" class="relative z-10 flex flex-col items-center gap-8">
+      <!-- Profile grid — centered in the space left below the header row, scrolls if tall -->
+      <div v-if="!pinOnly" class="relative z-10 flex-1 min-h-0 overflow-y-auto flex flex-col items-center justify-center gap-8 py-4">
         <h1 class="text-2xl font-bold text-white tracking-tight drop-shadow">{{ t('core.profiles.whoAreYou') }}</h1>
         <div v-if="loading" class="text-sm text-white/50">{{ t('core.profiles.loading') }}</div>
         <div v-else class="flex flex-wrap justify-center gap-4 max-w-xl">
