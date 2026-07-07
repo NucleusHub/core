@@ -6,6 +6,8 @@ import { initI18n } from '../useI18n.js'
 import ProfileSelector from './ProfileSelector.vue'
 import MaintenanceBanner from '../MaintenanceBanner.vue'
 import WhatsNewModal from '../WhatsNewModal.vue'
+import MadeByAttribution from '../MadeByAttribution.vue'
+import WidgetOverlayHost from '@widgets-core/components/WidgetOverlayHost.vue'
 
 const { isAuthenticated, checked, checkSession, profile } = useAuth()
 const { allApps, disabledAppIds } = useRegistry()
@@ -41,6 +43,9 @@ onMounted(() => {
        is being updated — see core/MaintenanceBanner.vue. -->
   <MaintenanceBanner />
 
+  <!-- "Made by _only" credit — shown across every app, in every auth state. -->
+  <MadeByAttribution />
+
   <template v-if="!checked">
     <!-- checking session — render nothing to prevent flash of unauthenticated content -->
   </template>
@@ -64,6 +69,11 @@ onMounted(() => {
            announcement; also opened from the sidebar launcher. Authenticated only,
            so it can read the viewer's profile.whatsNew state. -->
       <WhatsNewModal />
+      <!-- Pulse widgets the user opted to float inside this app. Rendered here
+           (the one component every app already wraps in) so apps never import
+           widget code themselves. No-op on the hub (its own dashboard renders
+           widgets) and whenever Pulse isn't installed. See @widgets-core. -->
+      <WidgetOverlayHost />
     </template>
   </template>
   <ProfileSelector v-else />
