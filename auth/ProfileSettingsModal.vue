@@ -230,7 +230,7 @@ async function submitPin(newPin) {
 </script>
 
 <template>
-  <TemplateModal :show="true" panel-class="max-w-sm" z="z-[600]" @cancel="emit('close')">
+  <TemplateModal :show="true" size="sm" z="z-[600]" @cancel="emit('close')">
     <div class="flex flex-col max-h-[85vh]">
       <!-- Header -->
       <div class="flex items-center justify-between px-5 pt-5 pb-4 border-b border-white/30 dark:border-white/8 shrink-0">
