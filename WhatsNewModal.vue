@@ -168,6 +168,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               <button
                 v-for="tb in tabs" :key="tb.id"
                 class="wn-tab" :class="{ 'wn-tab-active': tb.id === activeTab }"
+                :title="tb.name"
                 @click="activeTab = tb.id"
               >
                 <span v-if="tb.id === 'platform'" class="wn-tab-icon" aria-hidden="true">
@@ -176,7 +177,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                   </svg>
                 </span>
                 <AppIcon v-else :svg="tb.iconSvg" class="wn-tab-icon" />
-                {{ tb.name }}
+                <span class="wn-tab-label">{{ tb.name }}</span>
               </button>
             </div>
 
@@ -440,6 +441,36 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   box-shadow: none;
 }
 .dark .wn-feature-icon { background: rgba(255, 255, 255, 0.08); }
+
+/* Phone: keep the vertical rail but collapse it to a slim icon-only column so
+   the body gets the width back. Labels reappear on the active tab as a tooltip
+   via title=. */
+@media (max-width: 640px) {
+  .wn-panel { max-height: min(92vh, 44rem); border-radius: 1rem; }
+  .wn-tabs {
+    width: auto;
+    padding: 0.6rem 0.4rem;
+    gap: 0.3rem;
+  }
+  .wn-tab {
+    width: 2.5rem;
+    height: 2.5rem;
+    justify-content: center;
+    padding: 0;
+    gap: 0;
+    border-left: none;
+    border-radius: 0.7rem;
+  }
+  .wn-tab-label { display: none; }
+  .wn-tab-icon { width: 1.15rem; height: 1.15rem; }
+  .wn-body { padding: 0.9rem 1rem 0.5rem; }
+}
+
+/* Very narrow: let the footer wrap so the button never overflows. */
+@media (max-width: 380px) {
+  .wn-footer { flex-wrap: wrap; gap: 0.6rem; padding: 0.75rem 1rem; }
+  .wn-close-btn { width: 100%; margin-left: 0; }
+}
 
 .wn-fade-enter-active, .wn-fade-leave-active { transition: opacity 0.2s ease; }
 .wn-fade-enter-active .wn-panel, .wn-fade-leave-active .wn-panel { transition: transform 0.2s ease, opacity 0.2s ease; }
