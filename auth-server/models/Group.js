@@ -7,10 +7,18 @@ import mongoose from 'mongoose'
 //
 // `sharedOrbit` toggles a shared, immutable "Group - {name}" directory in Orbit
 // that every member can open (Orbit reads this same collection directly).
+//
+// `sharedPrism` gives the group a shared album in Prism. `prismAlbumJoint`
+// chooses its flavour: when true the album mirrors the group's shared Orbit
+// folder (read-only, requires sharedOrbit + Orbit installed); when false it's a
+// standalone Prism album members add photos to directly (works without Orbit).
+// Prism reads these same fields from this collection.
 const groupSchema = new mongoose.Schema({
-  name:        { type: String, required: true, trim: true },
-  memberIds:   { type: [String], default: [] }, // Profile ids
-  sharedOrbit: { type: Boolean, default: false },
+  name:            { type: String, required: true, trim: true },
+  memberIds:       { type: [String], default: [] }, // Profile ids
+  sharedOrbit:     { type: Boolean, default: false },
+  sharedPrism:     { type: Boolean, default: false },
+  prismAlbumJoint: { type: Boolean, default: false },
 }, { timestamps: true })
 
 export default mongoose.model('Group', groupSchema)

@@ -665,17 +665,30 @@ function serializeGroup(g) {
     name: g.name,
     memberIds: (g.memberIds ?? []).map(String),
     sharedOrbit: !!g.sharedOrbit,
+    sharedPrism: !!g.sharedPrism,
+    prismAlbumJoint: !!g.prismAlbumJoint,
     createdAt: g.createdAt,
   }
 }
 
-// Groups the CURRENT user belongs to (used by Orbit + the hub). Includes
-// sharedOrbit so Orbit knows which "Group - {name}" directories to surface.
+// Normalize the sharing flags: a joint Prism album mirrors the Orbit shared
+// folder, so it only makes sense when shared storage is on and an album exists.
+function normalizeSharing({ sharedOrbit, sharedPrism, prismAlbumJoint }) {
+  const so = !!sharedOrbit
+  const sp = !!sharedPrism
+  return { sharedOrbit: so, sharedPrism: sp, prismAlbumJoint: sp && so && !!prismAlbumJoint }
+}
+
+// Groups the CURRENT user belongs to (used by Orbit + the hub). Includes the
+// sharing flags so Orbit/Prism know which shared directories/albums to surface.
 router.get('/my-groups', requireAuth, async (req, res) => {
   try {
     const groups = await Group.find({ memberIds: String(req.profile.profileId) })
       .sort({ name: 1 }).lean()
-    res.json(groups.map(g => ({ _id: String(g._id), name: g.name, sharedOrbit: !!g.sharedOrbit })))
+    res.json(groups.map(g => ({
+      _id: String(g._id), name: g.name,
+      sharedOrbit: !!g.sharedOrbit, sharedPrism: !!g.sharedPrism, prismAlbumJoint: !!g.prismAlbumJoint,
+    })))
   } catch {
     res.status(500).json({ error: 'Server error' })
   }
@@ -699,7 +712,7 @@ router.post('/groups', requireAdmin, async (req, res) => {
     const group = await Group.create({
       name,
       memberIds: Array.isArray(req.body.memberIds) ? req.body.memberIds.map(String) : [],
-      sharedOrbit: !!req.body.sharedOrbit,
+      ...normalizeSharing(req.body),
     })
     res.status(201).json(serializeGroup(group))
   } catch (err) {
@@ -721,7 +734,18 @@ router.patch('/groups/:id', requireAdmin, async (req, res) => {
       if (!Array.isArray(req.body.memberIds)) return res.status(400).json({ error: 'memberIds must be an array' })
       update.memberIds = req.body.memberIds.map(String)
     }
-    if (req.body.sharedOrbit !== undefined) update.sharedOrbit = !!req.body.sharedOrbit
+    // Sharing flags interact (a joint Prism album needs shared storage), so
+    // resolve them against the current values as one coherent set.
+    const touchesSharing = ['sharedOrbit', 'sharedPrism', 'prismAlbumJoint'].some((k) => req.body[k] !== undefined)
+    if (touchesSharing) {
+      const current = await Group.findById(req.params.id).select('sharedOrbit sharedPrism prismAlbumJoint').lean()
+      if (!current) return res.status(404).json({ error: 'Not found' })
+      Object.assign(update, normalizeSharing({
+        sharedOrbit: req.body.sharedOrbit ?? current.sharedOrbit,
+        sharedPrism: req.body.sharedPrism ?? current.sharedPrism,
+        prismAlbumJoint: req.body.prismAlbumJoint ?? current.prismAlbumJoint,
+      }))
+    }
     const group = await Group.findByIdAndUpdate(req.params.id, update, { new: true })
     if (!group) return res.status(404).json({ error: 'Not found' })
     res.json(serializeGroup(group))
