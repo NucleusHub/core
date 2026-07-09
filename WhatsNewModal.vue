@@ -236,7 +236,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   flex-direction: column;
   width: 100%;
   max-width: 40rem;
-  max-height: min(85vh, 44rem);
+  /* Fixed height so the modal doesn't resize with per-tab content; the body
+     scrolls instead. Capped to the viewport on short screens. */
+  height: min(85vh, 44rem);
   border-radius: 1.25rem;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.85);
@@ -446,7 +448,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
    the body gets the width back. Labels reappear on the active tab as a tooltip
    via title=. */
 @media (max-width: 640px) {
-  .wn-panel { max-height: min(92vh, 44rem); border-radius: 1rem; }
+  .wn-panel { height: min(92vh, 44rem); border-radius: 1rem; }
   .wn-tabs {
     width: auto;
     padding: 0.6rem 0.4rem;
