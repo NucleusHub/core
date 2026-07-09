@@ -11,6 +11,7 @@
   "core.button.delete": "Smazat",
   "core.button.back": "Zpět",
   "core.echo.send": "Odeslat",
+  "core.echo.attach": "Připojit",
   "core.echo.messagePlaceholder": "Zpráva…",
   "core.echo.add": "Přidat",
   "core.echo.added": "Přidáno",

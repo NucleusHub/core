@@ -5,11 +5,13 @@ import { useI18n } from '../useI18n.js'
 
 const { t } = useI18n()
 
-// The message input. Its action row is built purely from registry-supplied
-// composer actions — Echo core knows nothing about Orbit or Goals; it just
-// renders the buttons each app contributed and emits `action` when one is
-// clicked. The host app handles the action (e.g. open a file picker) and then
-// calls send() with an app-typed message.
+// The message input. Its attachment options are built purely from registry-
+// supplied composer actions — Echo core knows nothing about Orbit or Prism; it
+// just lists what each app contributed and emits `action` when one is chosen.
+// The host handles the action (opens a picker) and then calls send() with an
+// app-typed message. Everything sits in one rounded bar: a single "+" reveals
+// the attachment sources so the input stays uncluttered no matter how many apps
+// are installed.
 const props = defineProps({
   // composer actions from the unified registry: [{ id, label, icon, app }]
   actions: { type: Array, default: () => [] },
@@ -20,48 +22,99 @@ const emit = defineEmits(['send', 'action', 'typing'])
 
 const text = ref('')
 const textarea = ref(null)
+const menuOpen = ref(false)
+
+// Grow the field with its content up to a cap, then it scrolls — so a long
+// message is fully visible while a short one stays a single tidy line.
+function autosize() {
+  const el = textarea.value
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+}
+
+function onInput() {
+  autosize()
+  emit('typing')
+}
 
 function submit() {
   const value = text.value.trim()
   if (!value || props.disabled) return
   emit('send', { type: 'text', payload: { text: value } })
   text.value = ''
-  // Keep focus in the field after sending so you can keep typing — clicking the
-  // send button would otherwise steal focus (pressing Enter keeps it anyway).
-  nextTick(() => textarea.value?.focus())
+  // Keep focus in the field after sending so you can keep typing (Enter keeps it
+  // anyway; the send button would otherwise steal it), and reset the height.
+  nextTick(() => { autosize(); textarea.value?.focus() })
+}
+
+function pick(action) {
+  menuOpen.value = false
+  emit('action', action)
 }
 </script>
 
 <template>
-  <div class="border-t border-slate-200/70 bg-white/40 px-3 py-2.5 backdrop-blur-md dark:border-white/10 dark:bg-white/5">
-    <div v-if="actions.length" class="mb-2 flex flex-wrap gap-1.5">
-      <EchoActionButton
-        v-for="a in actions"
-        :key="a.app + ':' + a.id"
-        :action="a"
-        compact
-        @invoke="emit('action', $event)"
-      />
-    </div>
-    <form class="flex items-end gap-2" @submit.prevent="submit">
+  <div class="px-3 pb-3 pt-1.5">
+    <div
+      class="relative flex items-end gap-1.5 rounded-[1.4rem] border border-slate-200/80 bg-white/70 py-1.5 pl-1.5 pr-1.5 shadow-sm backdrop-blur-md transition-colors focus-within:border-indigo-300 dark:border-white/10 dark:bg-white/[0.06] dark:focus-within:border-indigo-400/40"
+    >
+      <!-- Attachment sources (only when an app contributed one). -->
+      <template v-if="actions.length">
+        <button
+          type="button"
+          :aria-label="t('core.echo.attach')"
+          :title="t('core.echo.attach')"
+          class="group flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-500/10 hover:text-slate-700 dark:text-white/55 dark:hover:bg-white/10 dark:hover:text-white"
+          :class="menuOpen ? 'bg-slate-500/10 text-slate-700 dark:bg-white/10 dark:text-white' : ''"
+          @click="menuOpen = !menuOpen"
+        >
+          <svg
+            viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            class="transition-transform duration-200" :class="menuOpen ? 'rotate-45' : ''"
+          ><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+
+        <!-- Popover: one row per source. Closes on pick or outside click. -->
+        <div v-if="menuOpen" class="fixed inset-0 z-40" @click="menuOpen = false" />
+        <div
+          v-if="menuOpen"
+          class="absolute bottom-full left-0 z-50 mb-2 min-w-52 overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 p-1.5 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-800/90"
+        >
+          <p class="px-2.5 pb-1 pt-1 text-[0.65rem] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/40">
+            {{ t('core.echo.attach') }}
+          </p>
+          <EchoActionButton
+            v-for="a in actions"
+            :key="a.app + ':' + a.id"
+            :action="a"
+            class="!w-full !justify-start !rounded-xl !border-0 !bg-transparent !px-2.5 !py-2 hover:!bg-slate-500/[0.08] dark:hover:!bg-white/[0.08]"
+            @invoke="pick"
+          />
+        </div>
+      </template>
+
       <textarea
         ref="textarea"
         v-model="text"
         rows="1"
         :placeholder="placeholder || t('core.echo.messagePlaceholder')"
         :disabled="disabled"
-        class="max-h-32 min-h-[2.5rem] flex-1 resize-none rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-indigo-400 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder-white/35 dark:focus:border-indigo-400/50"
-        @input="emit('typing')"
+        class="max-h-40 flex-1 resize-none self-center bg-transparent px-2 py-2 text-[0.95rem] leading-relaxed text-slate-900 placeholder-slate-400 outline-none dark:text-white dark:placeholder-white/35"
+        @input="onInput"
         @keydown.enter.exact.prevent="submit"
       />
+
       <button
-        type="submit"
+        type="button"
         :disabled="disabled || !text.trim()"
-        class="cursor-pointer flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-500 text-white transition enabled:hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-40"
+        class="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-sm shadow-indigo-500/25 transition enabled:hover:brightness-110 enabled:active:scale-95 disabled:cursor-not-allowed disabled:from-slate-300 disabled:to-slate-300 disabled:text-white/70 disabled:shadow-none dark:disabled:from-white/10 dark:disabled:to-white/10 dark:disabled:text-white/30"
         :title="t('core.echo.send')"
+        @click="submit"
       >
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
       </button>
-    </form>
+    </div>
   </div>
 </template>
