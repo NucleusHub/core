@@ -28,6 +28,7 @@
   "core.whatsNew.close": "Got it",
   "core.whatsNew.emptyState": "Nothing new right now.",
   "core.whatsNew.latestBadge": "Latest",
+  "core.whatsNew.newBadge": "New",
   "core.whatsNew.showUpdates": "Show What's New on login",
   "core.whatsNew.showUpdatesHint": "Pop the changelog automatically when there's something new.",
   "core.profiles.whoAreYou": "Who are you?",

@@ -21,6 +21,11 @@ const announcements = ref([])
 const defaultLang = ref('en-US')
 const loaded = ref(false)
 const optOutChecked = ref(false)
+// The viewer's lastSeenAt captured at load time. Anything published after this is
+// "new to you" and drives the animated NEW indicators. Frozen at load so the
+// highlights stay stable while the modal is open, then bumped on dismiss so a
+// re-open in the same session shows the viewer as caught up.
+const seenBaseline = ref(null)
 
 // Resolve a { lang: text } map to the viewer's locale, then the feed's default
 // language, then any value — same strategy as MaintenanceBanner.vue.
@@ -35,6 +40,38 @@ const latestPublishedAt = computed(() => announcements.value[0]?.publishedAt || 
 // The whole-Nucleus version of the newest published release, shown on top.
 const latestNucleusVersion = computed(() => announcements.value[0]?.version || '')
 
+// "New to you": published more recently than the viewer last dismissed the modal.
+// A never-seen viewer (no baseline — shouldn't happen for real profiles, which are
+// seeded to "now") only flags the single newest release so we never show a wall of
+// NEW. This is the signal behind the animated tab dots and the NEW pill.
+function isUnseen(publishedAt) {
+  if (!publishedAt) return false
+  const base = seenBaseline.value
+  if (!base) return publishedAt === latestPublishedAt.value
+  return new Date(publishedAt) > new Date(base)
+}
+
+// App ids carrying an unseen update — used to badge the tab rail so the genuinely
+// newest changes are obvious no matter which tab you land on.
+const unseenTabIds = computed(() => {
+  const s = new Set()
+  for (const a of announcements.value) {
+    if (!isUnseen(a.publishedAt)) continue
+    for (const e of a.entries || [])
+      if ((e.features || []).length) s.add(e.app)
+  }
+  return s
+})
+
+// App ids that changed in the newest release (for orienting the default tab even
+// once everything has been seen).
+const latestAppIds = computed(() => {
+  const s = new Set()
+  for (const e of announcements.value[0]?.entries || [])
+    if ((e.features || []).length) s.add(e.app)
+  return s
+})
+
 // Auto-open once the feed and profile are both known: unless opted out, open when
 // an announcement was published more recently than the viewer last dismissed it
 // (a never-seen profile with lastSeenAt=null still opens — but new profiles are
@@ -42,6 +79,7 @@ const latestNucleusVersion = computed(() => announcements.value[0]?.version || '
 function maybeAutoOpen() {
   const wn = profile.value?.whatsNew || {}
   optOutChecked.value = !!wn.optOut
+  seenBaseline.value = wn.lastSeenAt || null
   if (wn.optOut) return
   const latest = latestPublishedAt.value
   if (!latest) return
@@ -88,9 +126,22 @@ const tabs = computed(() => {
   })
 })
 
+// The tab to land on: the first (in rail order) that carries an unseen update, so
+// the truly-latest change is front and centre — falling back to the newest
+// release's tab, then the first tab. This is the fix for "you always open on
+// Platform and miss the new Echo update sitting one tab over".
+const defaultTabId = computed(() => {
+  const list = tabs.value
+  if (!list.length) return null
+  const firstUnseen = list.find(tb => unseenTabIds.value.has(tb.id))
+  if (firstUnseen) return firstUnseen.id
+  const firstLatest = list.find(tb => latestAppIds.value.has(tb.id))
+  return (firstLatest || list[0]).id
+})
+
 const activeTab = ref(null)
 watch(tabs, (list) => {
-  if (!list.some(tb => tb.id === activeTab.value)) activeTab.value = list[0]?.id || null
+  if (!list.some(tb => tb.id === activeTab.value)) activeTab.value = defaultTabId.value
 }, { immediate: true })
 
 // For the active tab: each announcement that carries an entry for this app,
@@ -101,7 +152,13 @@ const activeGroups = computed(() => {
   for (const a of announcements.value) {
     const entry = (a.entries || []).find(e => e.app === activeTab.value)
     if (entry && (entry.features || []).length)
-      out.push({ version: entry.version || a.version, publishedAt: a.publishedAt, features: entry.features })
+      out.push({
+        version: entry.version || a.version,
+        publishedAt: a.publishedAt,
+        features: entry.features,
+        unseen: isUnseen(a.publishedAt),
+        latest: a.publishedAt === latestPublishedAt.value,
+      })
   }
   return out
 })
@@ -116,6 +173,9 @@ function fmtDate(d) {
 
 async function dismiss() {
   close()
+  // Mark as caught up locally so a same-session re-open drops the NEW highlights
+  // (the server records lastSeenAt below; the local profile isn't refetched).
+  seenBaseline.value = new Date().toISOString()
   try {
     await authFetch('/api/auth/whats-new/seen', { method: 'POST' })
     // Always send the checkbox state so it can both opt out and re-enable.
@@ -178,6 +238,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                 </span>
                 <AppIcon v-else :svg="tb.iconSvg" class="wn-tab-icon" />
                 <span class="wn-tab-label">{{ tb.name }}</span>
+                <span v-if="unseenTabIds.has(tb.id)" class="wn-tab-dot" aria-hidden="true"></span>
               </button>
             </div>
 
@@ -185,10 +246,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             <div class="wn-body">
               <p v-if="loaded && !activeGroups.length" class="wn-empty">{{ t('core.whatsNew.emptyState') }}</p>
 
-              <div v-for="(g, gi) in activeGroups" :key="g.version" class="wn-group" :class="{ 'wn-group-latest': gi === 0 }">
+              <div v-for="g in activeGroups" :key="g.version" class="wn-group"
+                   :class="{ 'wn-group-latest': g.unseen || g.latest, 'wn-group-new': g.unseen }">
                 <div class="wn-version-row">
                   <span class="wn-version">{{ g.version }}</span>
-                  <span v-if="gi === 0" class="wn-latest-badge">{{ t('core.whatsNew.latestBadge') }}</span>
+                  <span v-if="g.unseen" class="wn-new-badge">
+                    <span class="wn-new-dot" aria-hidden="true"></span>{{ t('core.whatsNew.newBadge') }}
+                  </span>
+                  <span v-else-if="g.latest" class="wn-latest-badge">{{ t('core.whatsNew.latestBadge') }}</span>
                   <span v-if="g.publishedAt" class="wn-date">{{ fmtDate(g.publishedAt) }}</span>
                 </div>
                 <ul class="wn-features">
@@ -308,6 +373,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   border-right: 1px solid rgba(15, 23, 42, 0.1);
 }
 .wn-tab {
+  position: relative;
   flex: none;
   display: flex;
   align-items: center;
@@ -330,6 +396,23 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 }
 .wn-tab-icon { width: 1rem; height: 1rem; flex: none; }
 
+/* Pulsing dot on a tab that carries an unseen update — the "look here" cue. */
+.wn-tab-dot {
+  margin-left: auto;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.55);
+  animation: wn-pulse 1.9s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@keyframes wn-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.55); }
+  70%  { box-shadow: 0 0 0 7px rgba(139, 92, 246, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0); }
+}
+
 .wn-body {
   flex: 1;
   min-width: 0;
@@ -349,6 +432,18 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   border: 1px solid rgba(99, 102, 241, 0.22);
   box-shadow: 0 1px 3px rgba(99, 102, 241, 0.12);
 }
+/* The genuinely-newest-to-you update: stronger gradient plus a soft breathing
+   glow so it reads as premium and alive without shouting. */
+.wn-group-new {
+  border-color: rgba(99, 102, 241, 0.4);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.16), rgba(139, 92, 246, 0.1));
+  animation: wn-glow 3.2s ease-in-out infinite;
+}
+@keyframes wn-glow {
+  0%, 100% { box-shadow: 0 1px 3px rgba(99, 102, 241, 0.12), 0 0 0 0 rgba(139, 92, 246, 0.18); }
+  50%      { box-shadow: 0 1px 3px rgba(99, 102, 241, 0.12), 0 0 22px 2px rgba(139, 92, 246, 0.22); }
+}
+
 .wn-version-row { display: flex; align-items: baseline; gap: 0.6rem; margin-bottom: 0.6rem; }
 .wn-latest-badge {
   font-size: 0.62rem;
@@ -359,6 +454,43 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   background: linear-gradient(135deg, #6366f1, #8b5cf6);
   padding: 0.12rem 0.45rem;
   border-radius: 0.4rem;
+}
+/* NEW pill — an animated gradient with a shimmer sweep. Reserved for updates the
+   viewer hasn't seen yet. */
+.wn-new-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  overflow: hidden;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #fff;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  padding: 0.14rem 0.5rem;
+  border-radius: 0.4rem;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.35);
+}
+.wn-new-badge::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, 0.55) 50%, transparent 70%);
+  transform: translateX(-120%);
+  animation: wn-shimmer 2.6s ease-in-out infinite;
+}
+@keyframes wn-shimmer {
+  0%, 55% { transform: translateX(-120%); }
+  100%    { transform: translateX(120%); }
+}
+.wn-new-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.9);
 }
 .wn-version {
   font-size: 0.7rem;
@@ -442,6 +574,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   border-color: rgba(129, 140, 248, 0.35);
   box-shadow: none;
 }
+.dark .wn-group-new {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.26), rgba(139, 92, 246, 0.18));
+  border-color: rgba(129, 140, 248, 0.5);
+}
 .dark .wn-feature-icon { background: rgba(255, 255, 255, 0.08); }
 
 /* Phone: keep the vertical rail but collapse it to a slim icon-only column so
@@ -466,6 +602,20 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   .wn-tab-label { display: none; }
   .wn-tab-icon { width: 1.15rem; height: 1.15rem; }
   .wn-body { padding: 0.9rem 1rem 0.5rem; }
+  /* No label to sit beside, so pin the dot to the icon corner. */
+  .wn-tab-dot {
+    position: absolute;
+    top: 0.35rem;
+    right: 0.35rem;
+    margin-left: 0;
+  }
+}
+
+/* Respect reduced-motion: keep the cues, drop the movement. */
+@media (prefers-reduced-motion: reduce) {
+  .wn-tab-dot,
+  .wn-group-new,
+  .wn-new-badge::after { animation: none; }
 }
 
 /* Very narrow: let the footer wrap so the button never overflows. */

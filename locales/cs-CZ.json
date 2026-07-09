@@ -28,6 +28,7 @@
   "core.whatsNew.close": "Rozumím",
   "core.whatsNew.emptyState": "Zatím žádné novinky.",
   "core.whatsNew.latestBadge": "Nejnovější",
+  "core.whatsNew.newBadge": "Nové",
   "core.whatsNew.showUpdates": "Zobrazovat novinky při přihlášení",
   "core.whatsNew.showUpdatesHint": "Automaticky zobrazí changelog, když je něco nového.",
   "core.profiles.whoAreYou": "Kdo jste?",
