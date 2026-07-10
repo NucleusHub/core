@@ -1,0 +1,167 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Nucleus motion — a shared, subtle, premium motion vocabulary.
+
+   One import (`@import "../../core/assets/motion.css";` from each app's main.css)
+   gives every app the same easing curves, entrance reveals, stagger, and hover
+   micro-interactions, so motion reads as one system across the ecosystem.
+
+   Everything here is quiet by design: short travel, gentle easing, and a hard
+   stop under prefers-reduced-motion. Reach for these utilities instead of
+   hand-rolling per-app keyframes.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Signature ease — a soft overshoot-free ease-out already used by the modal.
+     Everything that "arrives" (panels, cards, reveals) uses this. */
+  --nuc-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  /* Standard material ease for state changes (color, small transforms). */
+  --nuc-ease-std: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --nuc-dur-fast: 0.16s;
+  --nuc-dur: 0.24s;
+  --nuc-dur-slow: 0.5s;
+
+  /* Per-item stagger step; overridable inline via style="--nuc-step: 40ms". */
+  --nuc-step: 55ms;
+}
+
+/* ── Keyframes ──────────────────────────────────────────────────────────────── */
+@keyframes nuc-fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes nuc-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes nuc-scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes nuc-fade-right {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Ambient background-blob drift — long, lazy, non-repeating-feeling loops. */
+@keyframes nuc-blob-a {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50%      { transform: translate3d(6%, 8%, 0) scale(1.12); }
+}
+@keyframes nuc-blob-b {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.05); }
+  50%      { transform: translate3d(-7%, -5%, 0) scale(0.92); }
+}
+@keyframes nuc-blob-c {
+  0%, 100% { transform: translate3d(-50%, -50%, 0) scale(1); opacity: 1; }
+  50%      { transform: translate3d(-42%, -60%, 0) scale(1.18); opacity: 0.85; }
+}
+
+/* Skeleton / loading shimmer. */
+@keyframes nuc-shimmer {
+  from { background-position: -180% 0; }
+  to   { background-position: 180% 0; }
+}
+
+/* ── Entrance utilities ──────────────────────────────────────────────────────── */
+/* Drop these on any element that should reveal on mount. */
+.nuc-in       { animation: nuc-fade-up var(--nuc-dur-slow) var(--nuc-ease) both; }
+.nuc-in-fade  { animation: nuc-fade var(--nuc-dur-slow) var(--nuc-ease) both; }
+.nuc-in-scale { animation: nuc-scale-in var(--nuc-dur) var(--nuc-ease) both; }
+
+/* Stagger: put .nuc-stagger on a container; direct children reveal in sequence.
+   Covers up to 16 children; anything beyond arrives with the last delay. */
+.nuc-stagger > * { animation: nuc-fade-up var(--nuc-dur-slow) var(--nuc-ease) both; }
+.nuc-stagger > *:nth-child(1)  { animation-delay: calc(var(--nuc-step) * 0); }
+.nuc-stagger > *:nth-child(2)  { animation-delay: calc(var(--nuc-step) * 1); }
+.nuc-stagger > *:nth-child(3)  { animation-delay: calc(var(--nuc-step) * 2); }
+.nuc-stagger > *:nth-child(4)  { animation-delay: calc(var(--nuc-step) * 3); }
+.nuc-stagger > *:nth-child(5)  { animation-delay: calc(var(--nuc-step) * 4); }
+.nuc-stagger > *:nth-child(6)  { animation-delay: calc(var(--nuc-step) * 5); }
+.nuc-stagger > *:nth-child(7)  { animation-delay: calc(var(--nuc-step) * 6); }
+.nuc-stagger > *:nth-child(8)  { animation-delay: calc(var(--nuc-step) * 7); }
+.nuc-stagger > *:nth-child(9)  { animation-delay: calc(var(--nuc-step) * 8); }
+.nuc-stagger > *:nth-child(10) { animation-delay: calc(var(--nuc-step) * 9); }
+.nuc-stagger > *:nth-child(11) { animation-delay: calc(var(--nuc-step) * 10); }
+.nuc-stagger > *:nth-child(12) { animation-delay: calc(var(--nuc-step) * 11); }
+.nuc-stagger > *:nth-child(13) { animation-delay: calc(var(--nuc-step) * 12); }
+.nuc-stagger > *:nth-child(14) { animation-delay: calc(var(--nuc-step) * 13); }
+.nuc-stagger > *:nth-child(15) { animation-delay: calc(var(--nuc-step) * 14); }
+.nuc-stagger > *:nth-child(n+16) { animation-delay: calc(var(--nuc-step) * 15); }
+
+/* ── Micro-interactions ──────────────────────────────────────────────────────── */
+/* Gentle rise + shadow bloom on hover; a barely-there press. Apply to cards,
+   tiles, list rows that already have their own background. */
+/* Transitions list common state props too, so adding this class never cancels
+   an element's existing color/background hover fade (this stylesheet loads
+   after Tailwind, so its `transition` would otherwise win and drop them). */
+.nuc-lift {
+  transition: transform var(--nuc-dur) var(--nuc-ease),
+              box-shadow var(--nuc-dur) var(--nuc-ease),
+              color 0.15s, background-color 0.15s, border-color 0.15s;
+  will-change: transform;
+}
+.nuc-lift:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 30px -8px rgba(15, 23, 42, 0.22);
+}
+.dark .nuc-lift:hover {
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.55);
+}
+.nuc-lift:active { transform: translateY(-1px); }
+
+/* Tactile press for buttons/icons — quick scale-down on click. */
+.nuc-press {
+  transition: transform var(--nuc-dur-fast) var(--nuc-ease-std),
+              color 0.15s, background-color 0.15s, border-color 0.15s, opacity 0.15s;
+}
+.nuc-press:active { transform: scale(0.94); }
+
+/* Underline that grows from the left on hover; put on inline links/tabs.
+   Requires position: relative on the element. */
+.nuc-underline { position: relative; }
+.nuc-underline::after {
+  content: "";
+  position: absolute;
+  left: 0; bottom: -2px;
+  height: 2px; width: 100%;
+  background: currentColor;
+  border-radius: 2px;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--nuc-dur) var(--nuc-ease);
+}
+.nuc-underline:hover::after { transform: scaleX(1); }
+
+/* Shimmer surface for skeletons. Pair with a base background color. */
+.nuc-shimmer {
+  background-image: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.45) 50%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  animation: nuc-shimmer 1.6s ease-in-out infinite;
+}
+.dark .nuc-shimmer {
+  background-image: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.08) 50%,
+    transparent 70%
+  );
+}
+
+/* ── Respect the user ────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .nuc-in, .nuc-in-fade, .nuc-in-scale,
+  .nuc-stagger > *,
+  .nuc-shimmer {
+    animation: none !important;
+  }
+  .nuc-lift, .nuc-press, .nuc-underline::after {
+    transition: none !important;
+  }
+  .nuc-lift:hover { transform: none; }
+}

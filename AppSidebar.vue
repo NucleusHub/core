@@ -83,7 +83,7 @@ function launchWhatsNew() {
           </a>
           <button
             @click="emit('close')"
-            class="cursor-pointer p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+            class="nuc-press cursor-pointer p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -91,17 +91,17 @@ function launchWhatsNew() {
           </button>
         </div>
 
-        <nav class="flex-1 p-3 flex flex-col gap-1">
+        <nav class="flex-1 p-3 flex flex-col gap-1" :class="{ 'sb-open': open }">
           <a
             v-for="item in NAV_ITEMS"
             :key="item.to"
             :href="item.to"
             @click="emit('close')"
-            class="group flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-white/8 transition-colors"
+            class="sb-link group flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-white/8 transition"
             :class="isActive(item.to) ? 'bg-white/60 dark:bg-white/8 text-slate-900 dark:text-white' : ''"
           >
             <div
-              class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors"
+              class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition duration-200 group-hover:scale-110"
               :class="isActive(item.to) ? 'bg-indigo-600' : 'bg-black/5 dark:bg-white/8 group-hover:bg-black/8 dark:group-hover:bg-white/15'"
             >
               <AppIcon :svg="item.iconSvg" class="w-4 h-4" />
@@ -116,7 +116,7 @@ function launchWhatsNew() {
         <!-- Account / switch -->
         <div v-if="profile" class="px-3 pt-3 pb-1 border-t border-white/40 dark:border-white/8">
           <button @click="openSwitch"
-            class="cursor-pointer w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-white/8 transition-colors">
+            class="nuc-press cursor-pointer w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-white/8 transition-colors">
             <AvatarCircle :profile="profile" :size="32" />
             <div class="flex-1 text-left min-w-0">
               <p class="text-sm font-medium leading-tight truncate">{{ profile.name }}</p>
@@ -154,7 +154,7 @@ function launchWhatsNew() {
               :key="themeOpt.key"
               @click="setTheme(themeOpt.key)"
               :title="t(`core.theme.${themeOpt.key}`)"
-              :class="['cursor-pointer flex-1 flex items-center justify-center py-1.5 rounded-md transition-colors',
+              :class="['nuc-press cursor-pointer flex-1 flex items-center justify-center py-1.5 rounded-md transition-colors',
                 theme === themeOpt.key
                   ? 'bg-white/80 dark:bg-white/20 text-slate-900 dark:text-white shadow-sm'
                   : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-white']"
@@ -180,6 +180,30 @@ function launchWhatsNew() {
 </template>
 
 <style scoped>
+/* Nav links slide + fade in, one after another, each time the panel opens. */
+.sb-link { transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.15s, color 0.15s; }
+.sb-link:hover { transform: translateX(3px); }
+
+.sb-open .sb-link { animation: sb-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.sb-open .sb-link:nth-child(1) { animation-delay: 0.05s; }
+.sb-open .sb-link:nth-child(2) { animation-delay: 0.1s; }
+.sb-open .sb-link:nth-child(3) { animation-delay: 0.15s; }
+.sb-open .sb-link:nth-child(4) { animation-delay: 0.2s; }
+.sb-open .sb-link:nth-child(5) { animation-delay: 0.25s; }
+.sb-open .sb-link:nth-child(6) { animation-delay: 0.3s; }
+.sb-open .sb-link:nth-child(7) { animation-delay: 0.35s; }
+.sb-open .sb-link:nth-child(n+8) { animation-delay: 0.4s; }
+
+@keyframes sb-in {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sb-open .sb-link { animation: none; }
+  .sb-link:hover { transform: none; }
+}
+
 .admin-btn {
   width: 95%;
   display: flex;

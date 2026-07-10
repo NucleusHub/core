@@ -36,7 +36,7 @@ defineEmits(['action', 'clear'])
         >
           <button
             @click="$emit('clear')" :title="clearTitle" :aria-label="clearTitle"
-            class="grid place-items-center w-10 h-10 rounded-xl text-slate-300 hover:text-white hover:bg-white/12 cursor-pointer transition-colors"
+            class="nuc-press grid place-items-center w-10 h-10 rounded-xl text-slate-300 hover:text-white hover:bg-white/12 cursor-pointer transition-colors"
           >
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
           </button>
@@ -48,7 +48,7 @@ defineEmits(['action', 'clear'])
           <button
             v-for="a in actions" :key="a.key"
             @click="$emit('action', a.key)" :title="a.label" :aria-label="a.label"
-            class="grid place-items-center w-10 h-10 rounded-xl cursor-pointer transition-colors"
+            class="nuc-press grid place-items-center w-10 h-10 rounded-xl cursor-pointer transition-colors"
             :class="a.danger ? 'text-white hover:bg-rose-500/30' : `${a.colorClass || 'text-white'} hover:bg-white/12`"
           >
             <svg class="w-5 h-5" :fill="a.fill ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
@@ -63,7 +63,12 @@ defineEmits(['action', 'clear'])
 
 <style scoped>
 .seltoolbar-enter-active,
-.seltoolbar-leave-active { transition: opacity .2s ease, transform .22s cubic-bezier(0.22, 1, 0.36, 1); }
+.seltoolbar-leave-active { transition: opacity .2s ease, transform .26s cubic-bezier(0.34, 1.4, 0.64, 1); }
 .seltoolbar-enter-from,
-.seltoolbar-leave-to { opacity: 0; transform: translateY(1.25rem); }
+.seltoolbar-leave-to { opacity: 0; transform: translateY(1.25rem) scale(0.95); }
+
+@media (prefers-reduced-motion: reduce) {
+  .seltoolbar-enter-active, .seltoolbar-leave-active { transition: opacity .15s ease; }
+  .seltoolbar-enter-from, .seltoolbar-leave-to { transform: none; }
+}
 </style>

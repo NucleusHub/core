@@ -89,8 +89,14 @@ onUnmounted(() => document.removeEventListener('keydown', onKey))
 </template>
 
 <style scoped>
-.ctx-enter-active { transition: opacity 0.1s ease, transform 0.1s ease; }
-.ctx-leave-active { transition: opacity 0.08s ease; }
-.ctx-enter-from { opacity: 0; transform: scale(0.95); }
-.ctx-leave-to { opacity: 0; }
+/* Grows out from the click point (top-left) with a soft ease-out. */
+.ctx-enter-active .absolute { transition: opacity 0.14s ease, transform 0.16s cubic-bezier(0.22, 1, 0.36, 1); transform-origin: top left; }
+.ctx-leave-active .absolute { transition: opacity 0.1s ease, transform 0.1s ease; transform-origin: top left; }
+.ctx-enter-from .absolute { opacity: 0; transform: scale(0.92) translateY(-4px); }
+.ctx-leave-to .absolute { opacity: 0; transform: scale(0.97); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ctx-enter-active .absolute, .ctx-leave-active .absolute { transition: opacity 0.1s ease; transform: none; }
+  .ctx-enter-from .absolute, .ctx-leave-to .absolute { transform: none; }
+}
 </style>

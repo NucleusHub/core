@@ -33,6 +33,7 @@ const { isDark } = useTheme()
   padding: 0 14px;
   border-radius: 16px;
   pointer-events: auto;
+  animation: header-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
 
   background: rgba(255, 255, 255, 0.62);
   backdrop-filter: blur(20px) saturate(1.6);
@@ -55,4 +56,13 @@ const { isDark } = useTheme()
 .app-header-left   { display: flex; align-items: center; gap: 8px; justify-self: start; }
 .app-header-center { display: flex; align-items: center; justify-content: center; gap: 8px; }
 .app-header-right  { display: flex; align-items: center; gap: 8px; justify-self: end; }
+
+@keyframes header-in {
+  from { opacity: 0; transform: translateY(-12px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-header { animation: none; }
+}
 </style>
