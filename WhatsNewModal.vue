@@ -10,6 +10,7 @@ import { useI18n } from './useI18n.js'
 import { useAuth } from './auth/useAuth.js'
 import { useRegistry } from './useRegistry.js'
 import { useWhatsNew } from './useWhatsNew.js'
+import { burst } from './confetti.js'
 import AppIcon from './AppIcon.vue'
 
 const { t, locale } = useI18n()
@@ -83,7 +84,13 @@ function maybeAutoOpen() {
   if (wn.optOut) return
   const latest = latestPublishedAt.value
   if (!latest) return
-  if (!wn.lastSeenAt || new Date(latest) > new Date(wn.lastSeenAt)) open()
+  if (!wn.lastSeenAt || new Date(latest) > new Date(wn.lastSeenAt)) {
+    open()
+    // A quiet welcome flourish for a brand-new release — fires once, only on the
+    // auto-open (never on a manual sidebar open or when the viewer is caught up),
+    // after the modal has animated in. No-op under prefers-reduced-motion.
+    setTimeout(() => burst({ origin: { x: 0.5, y: 0.3 }, particleCount: 70, spread: 100 }), 340)
+  }
 }
 
 async function load() {

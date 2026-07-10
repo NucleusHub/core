@@ -61,5 +61,18 @@
   "core.profiles.uploadPhoto": "Nahrát fotku",
   "core.profiles.changePhoto": "Změnit fotku",
   "core.profiles.removePhoto": "Odebrat fotku",
-  "core.profiles.invalidImage": "Vyberte prosím obrázek"
+  "core.profiles.invalidImage": "Vyberte prosím obrázek",
+  "core.greeting.morning": "Dobré ráno",
+  "core.greeting.afternoon": "Dobré odpoledne",
+  "core.greeting.evening": "Dobrý večer",
+  "core.greeting.night": "Ještě vzhůru",
+  "core.greeting.morningNamed": "Dobré ráno, {name}",
+  "core.greeting.afternoonNamed": "Dobré odpoledne, {name}",
+  "core.greeting.eveningNamed": "Dobrý večer, {name}",
+  "core.greeting.nightNamed": "Ještě vzhůru, {name}?",
+  "core.egg.title": "Našel jsi jádro.",
+  "core.egg.subtitle": "Pěkný pohyby. ✨",
+  "core.egg.away1": "✦ Vrať se do Nucleu",
+  "core.egg.away2": "👀 Pořád tu čekám…",
+  "core.egg.away3": "🌘 Nucleus ti drží místo"
 }

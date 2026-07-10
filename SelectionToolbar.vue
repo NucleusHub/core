@@ -1,14 +1,19 @@
 <script setup>
+import TrashIcon from './TrashIcon.vue'
+import FavoriteHeart from './FavoriteHeart.vue'
+
 // Shared multi-select action bar for every Nucleus app (Orbit, Prism, …), so a
 // selection toolbar looks and behaves identically everywhere. The chrome — the
 // floating pill, the count, the divider and the clear button — lives here; each
 // app passes its own `actions` (declaratively) and localized strings, keeping
 // this component i18n-agnostic.
 //
-// actions: [{ key, label, icon (SVG path `d`), danger?, fill?, colorClass? }]
+// actions: [{ key, label, icon (SVG path `d`), danger?, fill?, colorClass?, iconTrash?, iconHeart? }]
 //   danger      → destructive (rose hover)
 //   fill        → render the icon filled (e.g. an active favorite heart)
 //   colorClass  → override icon tint for an active/toggled state
+//   iconTrash   → animated open-on-hover trash (see core/TrashIcon.vue)
+//   iconHeart   → favorite heart that blooms red from the centre (see core/FavoriteHeart.vue)
 //
 // Icon-only buttons keep it compact — it already fits a narrow phone screen; the
 // count text is short enough to stay. Centered via a flex wrapper (not a
@@ -49,9 +54,12 @@ defineEmits(['action', 'clear'])
             v-for="a in actions" :key="a.key"
             @click="$emit('action', a.key)" :title="a.label" :aria-label="a.label"
             class="nuc-press grid place-items-center w-10 h-10 rounded-xl cursor-pointer transition-colors"
-            :class="a.danger ? 'text-white hover:bg-rose-500/30' : `${a.colorClass || 'text-white'} hover:bg-white/12`"
+            :class="[a.danger ? 'text-white hover:bg-rose-500/30' : `${a.colorClass || 'text-white'} hover:bg-white/12`,
+                     a.iconTrash ? 'nuc-trash' : '', a.iconHeart ? 'nuc-fav' : '']"
           >
-            <svg class="w-5 h-5" :fill="a.fill ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+            <TrashIcon v-if="a.iconTrash" class="w-5 h-5" />
+            <FavoriteHeart v-else-if="a.iconHeart" :active="!!a.fill" class="w-5 h-5" />
+            <svg v-else class="w-5 h-5" :fill="a.fill ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" :d="a.icon" />
             </svg>
           </button>

@@ -133,6 +133,56 @@
 }
 .nuc-underline:hover::after { transform: scaleX(1); }
 
+/* ── Icon micro-interactions ─────────────────────────────────────────────────── */
+/* Drop one of these on an icon (usually an <svg>) to give it a little life on
+   hover. Each fires either when the icon itself is hovered OR when an enclosing
+   Tailwind `.group` is hovered — so they work inside icon buttons that already
+   use group-hover, without extra wiring. Quiet, single-gesture, and disabled
+   under reduced motion like everything else here. */
+.nuc-cog        { transition: transform 0.7s var(--nuc-ease); transform-origin: 50% 50%; }
+.group:hover .nuc-cog,        .nuc-cog:hover        { transform: rotate(180deg); }
+
+.nuc-spin-hover { transition: transform 0.6s var(--nuc-ease); transform-origin: 50% 50%; }
+.group:hover .nuc-spin-hover, .nuc-spin-hover:hover { transform: rotate(360deg); }
+
+.nuc-rotate     { transition: transform var(--nuc-dur) var(--nuc-ease); transform-origin: 50% 50%; }
+.group:hover .nuc-rotate,     .nuc-rotate:hover     { transform: rotate(90deg); }
+
+.nuc-pop        { transition: transform var(--nuc-dur) var(--nuc-ease); }
+.group:hover .nuc-pop,        .nuc-pop:hover        { transform: scale(1.18); }
+
+.nuc-nudge      { transition: transform var(--nuc-dur) var(--nuc-ease); }
+.group:hover .nuc-nudge,      .nuc-nudge:hover      { transform: translateX(3px); }
+
+.nuc-nudge-up   { transition: transform var(--nuc-dur) var(--nuc-ease); }
+.group:hover .nuc-nudge-up,   .nuc-nudge-up:hover   { transform: translateY(-2px); }
+
+.nuc-nudge-down { transition: transform var(--nuc-dur) var(--nuc-ease); }
+.group:hover .nuc-nudge-down, .nuc-nudge-down:hover { transform: translateY(1.5px); }
+
+.nuc-nudge-left { transition: transform var(--nuc-dur) var(--nuc-ease); }
+.group:hover .nuc-nudge-left, .nuc-nudge-left:hover { transform: translateX(-3px); }
+
+/* Trash-can lid — put `.nuc-lid` on the lid <path> of a two-part trash SVG (rim +
+   handle separate from the can body; see core/TrashIcon.vue). The lid tips open
+   only while its own `.nuc-trash` control is hovered — deliberately NOT keyed off
+   a generic `.group`, so hovering a whole card never springs the lid.
+   transform-box makes the SVG-local origin resolve against the lid's own box. */
+.nuc-lid { transition: transform var(--nuc-dur) var(--nuc-ease); transform-box: fill-box; transform-origin: bottom left; }
+.nuc-trash:hover .nuc-lid, .nuc-lid:hover { transform: translateY(-1.5px) rotate(-16deg); }
+
+/* Bell/attach-style attention wiggle — a quick, damped shake, pivoting from the
+   top so it reads like a ringing bell rather than a spin. */
+.nuc-wiggle { transform-origin: 50% 15%; }
+.group:hover .nuc-wiggle,     .nuc-wiggle:hover     { animation: nuc-wiggle 0.55s var(--nuc-ease-std); }
+@keyframes nuc-wiggle {
+  0%, 100% { transform: rotate(0); }
+  15% { transform: rotate(-13deg); }
+  35% { transform: rotate(10deg); }
+  55% { transform: rotate(-6deg); }
+  75% { transform: rotate(3deg); }
+}
+
 /* Shimmer surface for skeletons. Pair with a base background color. */
 .nuc-shimmer {
   background-image: linear-gradient(
@@ -160,8 +210,17 @@
   .nuc-shimmer {
     animation: none !important;
   }
-  .nuc-lift, .nuc-press, .nuc-underline::after {
+  .nuc-lift, .nuc-press, .nuc-underline::after,
+  .nuc-cog, .nuc-spin-hover, .nuc-rotate, .nuc-pop,
+  .nuc-nudge, .nuc-nudge-up, .nuc-nudge-down, .nuc-nudge-left, .nuc-lid {
     transition: none !important;
   }
   .nuc-lift:hover { transform: none; }
+  .group:hover .nuc-cog, .group:hover .nuc-spin-hover, .group:hover .nuc-rotate,
+  .group:hover .nuc-pop, .group:hover .nuc-nudge, .group:hover .nuc-nudge-up,
+  .group:hover .nuc-nudge-down, .group:hover .nuc-nudge-left, .group:hover .nuc-lid,
+  .nuc-cog:hover, .nuc-spin-hover:hover, .nuc-rotate:hover, .nuc-pop:hover,
+  .nuc-nudge:hover, .nuc-nudge-up:hover, .nuc-nudge-down:hover,
+  .nuc-nudge-left:hover, .nuc-lid:hover, .nuc-trash:hover .nuc-lid { transform: none; }
+  .group:hover .nuc-wiggle, .nuc-wiggle:hover { animation: none; }
 }

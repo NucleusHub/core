@@ -1,11 +1,15 @@
 <script setup>
 import { ref, watch, nextTick, onUnmounted } from 'vue'
+import TrashIcon from './TrashIcon.vue'
+import FavoriteHeart from './FavoriteHeart.vue'
 
 // Shared right-click menu for the whole Nucleus ecosystem. Items are plain
 // objects so any app can drive it without knowing about this component:
-//   { label, icon, action, danger, divider, href, download }
+//   { label, icon, action, danger, divider, href, download, iconTrash, iconHeart, iconActive }
 // - divider: renders a separator instead of a row
 // - href (+ optional download): renders an <a> (e.g. a download link)
+// - iconTrash: render the animated open-on-hover trash instead of `icon`
+// - iconHeart: render the favorite heart (fills from centre; `iconActive` = filled)
 // - otherwise: a <button> that runs action() then closes
 // The menu flips to stay on-screen near the click point.
 const props = defineProps({
@@ -58,12 +62,16 @@ onUnmounted(() => document.removeEventListener('keydown', onKey))
               :href="item.href"
               :download="item.download"
               class="flex items-center gap-2.5 px-3 py-2 text-sm transition-colors cursor-pointer"
-              :class="item.danger
-                ? 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10'
-                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/8'"
+              :class="[
+                item.danger
+                  ? 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/8',
+                item.iconTrash ? 'nuc-trash' : '', item.iconHeart ? 'nuc-fav' : '']"
               @click="$emit('close')"
             >
-              <svg v-if="item.icon" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+              <TrashIcon v-if="item.iconTrash" class="w-4 h-4 shrink-0" />
+              <FavoriteHeart v-else-if="item.iconHeart" :active="!!item.iconActive" class="w-4 h-4 shrink-0" />
+              <svg v-else-if="item.icon" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" :d="item.icon" />
               </svg>
               {{ item.label }}
@@ -71,12 +79,16 @@ onUnmounted(() => document.removeEventListener('keydown', onKey))
             <button
               v-else
               class="w-full flex items-center gap-2.5 px-3 py-2 text-sm transition-colors cursor-pointer"
-              :class="item.danger
-                ? 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10'
-                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/8'"
+              :class="[
+                item.danger
+                  ? 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/8',
+                item.iconTrash ? 'nuc-trash' : '', item.iconHeart ? 'nuc-fav' : '']"
               @click="item.action?.(); $emit('close')"
             >
-              <svg v-if="item.icon" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+              <TrashIcon v-if="item.iconTrash" class="w-4 h-4 shrink-0" />
+              <FavoriteHeart v-else-if="item.iconHeart" :active="!!item.iconActive" class="w-4 h-4 shrink-0" />
+              <svg v-else-if="item.icon" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" :d="item.icon" />
               </svg>
               {{ item.label }}

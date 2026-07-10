@@ -7,6 +7,7 @@ import ProfileSelector from './ProfileSelector.vue'
 import MaintenanceBanner from '../MaintenanceBanner.vue'
 import WhatsNewModal from '../WhatsNewModal.vue'
 import MadeByAttribution from '../MadeByAttribution.vue'
+import EasterEggs from '../EasterEggs.vue'
 import WidgetOverlayHost from '@widgets-core/components/WidgetOverlayHost.vue'
 
 const { isAuthenticated, checked, checkSession, profile } = useAuth()
@@ -45,6 +46,10 @@ onMounted(() => {
 
   <!-- "Made by _only" credit — shown across every app, in every auth state. -->
   <MadeByAttribution />
+
+  <!-- Ambient delights (Konami code, tab-away title tease) — hosted once here so
+       they run across every app in every auth state. See core/EasterEggs.vue. -->
+  <EasterEggs />
 
   <template v-if="!checked">
     <!-- checking session — render nothing to prevent flash of unauthenticated content -->

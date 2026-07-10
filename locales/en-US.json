@@ -61,5 +61,18 @@
   "core.profiles.uploadPhoto": "Upload photo",
   "core.profiles.changePhoto": "Change photo",
   "core.profiles.removePhoto": "Remove photo",
-  "core.profiles.invalidImage": "Please choose an image file"
+  "core.profiles.invalidImage": "Please choose an image file",
+  "core.greeting.morning": "Good morning",
+  "core.greeting.afternoon": "Good afternoon",
+  "core.greeting.evening": "Good evening",
+  "core.greeting.night": "Still up",
+  "core.greeting.morningNamed": "Good morning, {name}",
+  "core.greeting.afternoonNamed": "Good afternoon, {name}",
+  "core.greeting.eveningNamed": "Good evening, {name}",
+  "core.greeting.nightNamed": "Still up, {name}?",
+  "core.egg.title": "You found the core.",
+  "core.egg.subtitle": "Nice moves. ✨",
+  "core.egg.away1": "✦ Come back to Nucleus",
+  "core.egg.away2": "👀 Still here, waiting…",
+  "core.egg.away3": "🌘 Nucleus kept your spot"
 }
