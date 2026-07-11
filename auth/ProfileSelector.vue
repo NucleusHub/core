@@ -3,7 +3,8 @@ import { ref, onMounted, onUnmounted, onBeforeUnmount } from 'vue'
 import { LiquidGlass } from '@zaosoula/liquid-glass-vue/components'
 import { useI18n } from '../useI18n.js'
 import { useAuth } from './useAuth.js'
-import { useWhatsNew } from '../useWhatsNew.js'
+import { useRegistry } from '../useRegistry.js'
+import { useWhatsNew } from '../../plugins/whats-new/client/useWhatsNew.js'
 import AvatarCircle from './AvatarCircle.vue'
 import PinInput from './PinInput.vue'
 import ProfileSettingsModal from './ProfileSettingsModal.vue'
@@ -16,6 +17,7 @@ const emit = defineEmits(['close'])
 
 const { t } = useI18n()
 const { login, completeTempLogin, profile: currentProfile } = useAuth()
+const { isPluginEnabled } = useRegistry()
 const { open: openWhatsNew } = useWhatsNew()
 
 // Open the What's New changelog: close this switcher first so the modal (mounted
@@ -234,7 +236,7 @@ async function createProfile() {
       <!-- Corner controls: settings (own profile) + close. In-flow header row so
            they never overlap the (potentially tall, wrapping) profile grid on phones. -->
       <div v-if="closeable && !selected && !creating" class="relative z-10 shrink-0 flex items-center justify-end gap-2.5">
-        <button v-if="currentProfile"
+        <button v-if="currentProfile && isPluginEnabled('whats-new')"
           @click="openLog"
           :title="t('core.whatsNew.launch')" :aria-label="t('core.whatsNew.launch')"
           class="w-11 h-11 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-colors cursor-pointer">

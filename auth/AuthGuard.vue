@@ -5,13 +5,19 @@ import { useRegistry } from '../useRegistry.js'
 import { initI18n } from '../useI18n.js'
 import ProfileSelector from './ProfileSelector.vue'
 import MaintenanceBanner from '../MaintenanceBanner.vue'
-import WhatsNewModal from '../WhatsNewModal.vue'
+import WhatsNewModal from '../../plugins/whats-new/client/WhatsNewModal.vue'
 import MadeByAttribution from '../MadeByAttribution.vue'
 import EasterEggs from '../EasterEggs.vue'
 import WidgetOverlayHost from '@widgets-core/components/WidgetOverlayHost.vue'
 
 const { isAuthenticated, checked, checkSession, profile } = useAuth()
-const { allApps, disabledAppIds } = useRegistry()
+const { allApps, disabledAppIds, loading: registryLoading, isPluginEnabled } = useRegistry()
+
+// The What's New modal is owned by the whats-new plugin; only mount it once the
+// registry (with the disabled-plugin set) has loaded and the plugin is enabled,
+// so disabling it in Admin actually stops the modal (no auto-open) — not just its
+// admin tab. Gating on load avoids a flash-mount before overrides arrive.
+const whatsNewEnabled = computed(() => !registryLoading.value && isPluginEnabled('whats-new'))
 
 // Which app is this bundle? Match the Vite base path against each app's route
 // (base '/goals' → the app whose route is '/goals', id 'goal-calendar'). The hub
@@ -73,7 +79,7 @@ onMounted(() => {
       <!-- What's New changelog — auto-opens on login when there's an unseen
            announcement; also opened from the sidebar launcher. Authenticated only,
            so it can read the viewer's profile.whatsNew state. -->
-      <WhatsNewModal />
+      <WhatsNewModal v-if="whatsNewEnabled" />
       <!-- Pulse widgets the user opted to float inside this app. Rendered here
            (the one component every app already wraps in) so apps never import
            widget code themselves. No-op on the hub (its own dashboard renders

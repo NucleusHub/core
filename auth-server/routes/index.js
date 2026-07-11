@@ -12,7 +12,7 @@ import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { resolveViewer, filterProfiles } from '../visibility.js'
 import localizationRouter from './localization.js'
 import maintenanceRouter from './maintenance.js'
-import whatsNewRouter from './whatsNew.js'
+import whatsNewRouter from '../plugins/whats-new/server/route.js'
 
 const router = Router()
 
@@ -25,7 +25,7 @@ router.use('/i18n', localizationRouter)
 router.use('/maintenance', maintenanceRouter)
 
 // "What's New" changelog (feed + per-user seen state + admin CRUD) at
-// /api/auth/whats-new/* — see routes/whatsNew.js.
+// /api/auth/whats-new/* — see plugins/whats-new/server/route.js.
 router.use('/whats-new', whatsNewRouter)
 const secret = () => process.env.JWT_SECRET || 'nucleus-jwt-secret'
 const COOKIE = {
@@ -571,17 +571,18 @@ router.get('/overrides', requireAuth, async (_req, res) => {
     res.json({
       apps:    all.filter(o => o.kind === 'app').map(o => o.itemId),
       widgets: all.filter(o => o.kind === 'widget').map(o => o.itemId),
+      plugins: all.filter(o => o.kind === 'plugin').map(o => o.itemId),
     })
   } catch {
     res.status(500).json({ error: 'Server error' })
   }
 })
 
-// Admin-only: globally enable/disable an app or widget for ALL users.
+// Admin-only: globally enable/disable an app, widget or plugin for ALL users.
 router.patch('/overrides/:kind/:id', requireAdmin, async (req, res) => {
   try {
     const { kind, id } = req.params
-    if (kind !== 'app' && kind !== 'widget') return res.status(400).json({ error: 'Invalid kind' })
+    if (kind !== 'app' && kind !== 'widget' && kind !== 'plugin') return res.status(400).json({ error: 'Invalid kind' })
     const disabled = !!req.body.disabled
     await RegistryOverride.findOneAndUpdate(
       { kind, itemId: id },
@@ -618,7 +619,7 @@ router.get('/effective-overrides', requireAuth, async (req, res) => {
       ...groupOv.filter(o => o.kind === kind).map(o => o.itemId),
       ...userOv.filter(o => o.kind === kind).map(o => o.itemId),
     ]
-    res.json({ apps: [...new Set(ids('app'))], widgets: [...new Set(ids('widget'))] })
+    res.json({ apps: [...new Set(ids('app'))], widgets: [...new Set(ids('widget'))], plugins: [...new Set(ids('plugin'))] })
   } catch {
     res.status(500).json({ error: 'Server error' })
   }

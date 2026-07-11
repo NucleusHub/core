@@ -6,12 +6,12 @@ import { useRegistry } from './useRegistry.js'
 import { useTheme } from './useTheme.js'
 import { useI18n } from './useI18n.js'
 import { useAuth } from './auth/useAuth.js'
-import { useWhatsNew } from './useWhatsNew.js'
+import { useWhatsNew } from '../plugins/whats-new/client/useWhatsNew.js'
 import AvatarCircle from './auth/AvatarCircle.vue'
 import ProfileSelector from './auth/ProfileSelector.vue'
 import AppIcon from './AppIcon.vue'
 
-const { apps, hasApp } = useRegistry()
+const { apps, hasApp, isPluginEnabled } = useRegistry()
 const { t } = useI18n()
 const NAV_ITEMS = computed(() =>
   apps.value
@@ -128,7 +128,7 @@ function launchWhatsNew() {
           </button>
         </div>
 
-        <div v-if="profile" class="sidebar-footer">
+        <div v-if="profile && isPluginEnabled('whats-new')" class="sidebar-footer">
           <button class="admin-btn" :class="{ 'theme-light': !isDark }" @click="launchWhatsNew">
             <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
               <path d="M12 2l2.09 5.26L19.5 9.3l-5.41 2.04L12 16.6l-2.09-5.26L4.5 9.3l5.41-2.04L12 2z" />

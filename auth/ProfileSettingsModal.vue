@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import TemplateModal from '../TemplateModal.vue'
 import { useI18n } from '../useI18n.js'
+import { useRegistry } from '../useRegistry.js'
 import { useAuth, avatarUrl } from './useAuth.js'
 import AvatarCircle from './AvatarCircle.vue'
 import PinInput from './PinInput.vue'
@@ -16,6 +17,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'updated'])
 
 const { t } = useI18n()
+const { isPluginEnabled } = useRegistry()
 const { authFetch, checkSession } = useAuth()
 
 // Avatar palette — mirrors auth-server/models/Profile.js COLORS.
@@ -358,8 +360,8 @@ async function submitPin(newPin) {
           </div>
         </div>
 
-        <!-- What's New -->
-        <div class="pt-4 border-t border-white/30 dark:border-white/8">
+        <!-- What's New (hidden when the whats-new plugin is disabled globally) -->
+        <div v-if="isPluginEnabled('whats-new')" class="pt-4 border-t border-white/30 dark:border-white/8">
           <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/35 mb-2">{{ t('core.whatsNew.launch') }}</label>
           <div class="flex items-center justify-between gap-3">
             <div class="min-w-0">

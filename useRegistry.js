@@ -12,6 +12,11 @@ const disabledWidgetIds = ref(new Set())
 // Globally-disabled app ids — e.g. disabling "pulse" turns off the whole
 // widget/dashboard system (button, overlay, widgets), leaving only core hub UI.
 const disabledAppIds = ref(new Set())
+// Globally-disabled plugin ids — a plugin disabled in Admin → Plugins is off for
+// everyone. Core UI that a plugin owns (e.g. the What's New modal + its launchers)
+// checks isPluginEnabled() so disabling the plugin actually stops it, not just its
+// admin tab. See the Admin Plugins toggle + /api/auth/overrides plugins[].
+const disabledPluginIds = ref(new Set())
 const loading = ref(true)
 const error = ref(null)
 
@@ -27,13 +32,14 @@ async function fetchRegistry() {
       // Effective overrides for the current user (global ∪ per-user) — hides
       // anything an admin disabled globally or just for this user.
       fetch('/api/auth/effective-overrides', { credentials: 'include' })
-        .then(r => r.ok ? r.json() : { apps: [], widgets: [] })
-        .catch(() => ({ apps: [], widgets: [] })),
+        .then(r => r.ok ? r.json() : { apps: [], widgets: [], plugins: [] })
+        .catch(() => ({ apps: [], widgets: [], plugins: [] })),
     ])
     const rawApps = await appsRes.json()
     const rawWidgets = await widgetsRes.json()
     const offApps = new Set(overrides.apps ?? [])
     const offWidgets = new Set(overrides.widgets ?? [])
+    disabledPluginIds.value = new Set(overrides.plugins ?? [])
     // Cascade: a widget whose data provider (dependsOn) is disabled is also off
     // — e.g. disabling "sysinfo" turns off System Load / Storage / Network / Temps.
     for (const w of rawWidgets) {
@@ -58,5 +64,9 @@ export function useRegistry() {
   // cross-app UI should use before surfacing a button/link/menu that points at
   // another app — never assume a sibling app is installed.
   const hasApp = (id) => apps.value.some(a => a.id === id)
-  return { apps, allApps, widgets, disabledWidgetIds, disabledAppIds, loading, error, hasApp }
+  // Is a plugin enabled (not globally disabled)? Default-enabled: a plugin absent
+  // from the disabled set (or before overrides load) is treated as enabled. Core
+  // UI a plugin owns gates on this so disabling it in Admin actually stops it.
+  const isPluginEnabled = (id) => !disabledPluginIds.value.has(id)
+  return { apps, allApps, widgets, disabledWidgetIds, disabledAppIds, disabledPluginIds, loading, error, hasApp, isPluginEnabled }
 }

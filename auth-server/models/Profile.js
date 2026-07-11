@@ -40,7 +40,7 @@ const profileSchema = new mongoose.Schema({
   // user last dismissed it — the modal auto-opens when an announcement was
   // published more recently. New profiles are seeded to "now" so they start
   // caught up (no modal on first login). `optOut` permanently silences it.
-  // See core/auth-server/routes/whatsNew.js and core/WhatsNewModal.vue.
+  // See plugins/whats-new/server/route.js and plugins/whats-new/client/WhatsNewModal.vue.
   whatsNew: {
     lastSeenAt: { type: Date, default: null },
     optOut:     { type: Boolean, default: false },
