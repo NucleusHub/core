@@ -56,6 +56,11 @@ function reverseIndex(section, normalize) {
 const normIp = (v) => String(v ?? '').trim().replace(/^::ffff:/i, '')
 const normId = (v) => String(v ?? '').trim()
 
+// Loopback = the request came from the box itself (local dev). Group visibility
+// is a Tailscale-IP feature, so it's meaningless — and just gets in the way —
+// when developing on localhost. `normIp` has already stripped any ::ffff: prefix.
+const isLoopback = (ip) => ip === '::1' || ip === '127.0.0.1' || ip.startsWith('127.')
+
 // mtime-cached load: edit the JSON and the change is picked up on the next
 // request, no restart. A missing/broken file degrades to "no restriction".
 let cache = { mtimeMs: -1, data: EMPTY }
@@ -122,6 +127,11 @@ export function filterProfiles(list, viewer, opts = {}) {
       : null
     if (self?.isGuest) return [self]
   }
+
+  // Ignore group visibility entirely on localhost (local dev): a developer
+  // hitting the stack over loopback has no Tailscale group IP and shouldn't be
+  // filtered down to a single group. Guest handling above still applies.
+  if (isLoopback(viewer.ip)) return list
 
   const viewerGroups = viewer.profileId
     ? groupsOf(cfg.profiles, normId(viewer.profileId))
