@@ -4,7 +4,7 @@ import { useAuth } from './useAuth.js'
 import { useRegistry } from '../useRegistry.js'
 import { initI18n } from '../useI18n.js'
 import ProfileSelector from './ProfileSelector.vue'
-import MaintenanceBanner from '../MaintenanceBanner.vue'
+import MaintenanceBanner from '../../plugins/maintenance/client/MaintenanceBanner.vue'
 import WhatsNewModal from '../../plugins/whats-new/client/WhatsNewModal.vue'
 import MadeByAttribution from '../MadeByAttribution.vue'
 import EasterEggs from '../EasterEggs.vue'
@@ -18,6 +18,10 @@ const { allApps, disabledAppIds, loading: registryLoading, isPluginEnabled } = u
 // so disabling it in Admin actually stops the modal (no auto-open) — not just its
 // admin tab. Gating on load avoids a flash-mount before overrides arrive.
 const whatsNewEnabled = computed(() => !registryLoading.value && isPluginEnabled('whats-new'))
+
+// Same for the maintenance banner (owned by the maintenance plugin): disabling
+// the plugin in Admin stops the banner. Default-enabled until the registry loads.
+const maintenanceEnabled = computed(() => !registryLoading.value && isPluginEnabled('maintenance'))
 
 // Which app is this bundle? Match the Vite base path against each app's route
 // (base '/goals' → the app whose route is '/goals', id 'goal-calendar'). The hub
@@ -47,8 +51,9 @@ onMounted(() => {
 
 <template>
   <!-- Shown across every app (regardless of auth state) whenever the platform
-       is being updated — see core/MaintenanceBanner.vue. -->
-  <MaintenanceBanner />
+       is being updated — see plugins/maintenance/client/MaintenanceBanner.vue.
+       Owned by the maintenance plugin; hidden when that plugin is disabled. -->
+  <MaintenanceBanner v-if="maintenanceEnabled" />
 
   <!-- "Made by _only" credit — shown across every app, in every auth state. -->
   <MadeByAttribution />

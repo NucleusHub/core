@@ -2,7 +2,7 @@ import mongoose from 'mongoose'
 import bcrypt from 'bcryptjs'
 import Profile, { colorFromName } from '../models/Profile.js'
 import LocaleConfig from '../models/LocaleConfig.js'
-import MaintenancePreset from '../models/MaintenancePreset.js'
+import MaintenancePreset from '../plugins/maintenance/server/MaintenancePreset.js'
 
 // Shipped maintenance-banner presets, mirroring the wording of the legacy
 // infra/maintenance CLI, translated to the languages that ship on disk. Seeded

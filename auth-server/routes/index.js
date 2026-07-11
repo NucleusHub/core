@@ -11,7 +11,7 @@ import GroupOverride from '../models/GroupOverride.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { resolveViewer, filterProfiles } from '../visibility.js'
 import localizationRouter from './localization.js'
-import maintenanceRouter from './maintenance.js'
+import maintenanceRouter from '../plugins/maintenance/server/route.js'
 import whatsNewRouter from '../plugins/whats-new/server/route.js'
 
 const router = Router()
@@ -21,7 +21,7 @@ const router = Router()
 router.use('/i18n', localizationRouter)
 
 // Maintenance-banner control (presets + on/off) at /api/auth/maintenance/* —
-// see routes/maintenance.js.
+// see plugins/maintenance/server/route.js.
 router.use('/maintenance', maintenanceRouter)
 
 // "What's New" changelog (feed + per-user seen state + admin CRUD) at
