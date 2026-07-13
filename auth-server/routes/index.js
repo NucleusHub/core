@@ -2,6 +2,9 @@ import { Router } from 'express'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import { randomInt } from 'crypto'
+import { readFileSync } from 'fs'
+import { fileURLToPath } from 'url'
+import { dirname, join } from 'path'
 import mongoose from 'mongoose'
 import Profile, { colorFromName } from '../models/Profile.js'
 import RegistryOverride from '../models/RegistryOverride.js'
@@ -10,15 +13,24 @@ import Group from '../models/Group.js'
 import GroupOverride from '../models/GroupOverride.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { resolveViewer, filterProfiles } from '../visibility.js'
-import localizationRouter from './localization.js'
 import maintenanceRouter from '../plugins/maintenance/server/route.js'
 import whatsNewRouter from '../plugins/whats-new/server/route.js'
 
 const router = Router()
 
-// Core localization service (catalogs, config, admin management) at
-// /api/auth/i18n/* — see routes/localization.js.
-router.use('/i18n', localizationRouter)
+// Localization is an optional plugin. Its server code is bind-mounted at
+// /app/plugins/localization; mount the /api/auth/i18n surface only when the
+// plugin is installed. When it's absent, the platform runs in static
+// single-language mode and every app falls back to its manifest default locale
+// file (see core/useI18n.js). Guarded so a missing plugin never crashes the
+// auth-server. See plugins/localization/server/route.js.
+try {
+  const { default: localizationRouter } = await import('../plugins/localization/server/route.js')
+  router.use('/i18n', localizationRouter)
+  console.log('[i18n] localization plugin mounted at /api/auth/i18n')
+} catch {
+  console.log('[i18n] localization plugin not installed — static single-language mode')
+}
 
 // Maintenance-banner control (presets + on/off) at /api/auth/maintenance/* —
 // see plugins/maintenance/server/route.js.
@@ -650,6 +662,80 @@ router.patch('/users/:id/overrides/:kind/:itemId', requireAdmin, async (req, res
       { upsert: true, new: true },
     )
     res.json({ profileId: id, kind, itemId, disabled })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ── Self-service plugin toggles (current user, NON-CORE plugins only) ────────
+// Users can turn optional (non-core) plugins on/off for their own account from
+// Profile settings. Core plugins own platform-wide behavior (maintenance banner,
+// localization, changelog) and stay admin-only. A global/group disable always
+// wins — the user can't re-enable what an admin turned off.
+
+// Plugin dirs are bind-mounted at /app/plugins; this file is /app/routes/index.js.
+const PLUGINS_DIR = process.env.PLUGINS_DIR || join(dirname(fileURLToPath(import.meta.url)), '..', 'plugins')
+
+// A plugin's declared `target` from its manifest, or null if it can't be read.
+// `id` is validated to a safe slug first (no path traversal).
+function pluginTarget(id) {
+  if (!/^[a-z0-9][a-z0-9-]*$/i.test(id)) return null
+  try {
+    return JSON.parse(readFileSync(join(PLUGINS_DIR, id, 'nucleus.plugin.json'), 'utf8')).target ?? null
+  } catch {
+    return null
+  }
+}
+const isCorePlugin = (target) =>
+  target === 'core' || (Array.isArray(target) && target.includes('core'))
+
+// Plugin ids the current user can't re-enable: disabled globally or by a group.
+async function lockedPluginIds(pid) {
+  const groups = await Group.find({ memberIds: pid }).select('_id').lean()
+  const groupIds = groups.map(g => String(g._id))
+  const [globalOv, groupOv] = await Promise.all([
+    RegistryOverride.find({ kind: 'plugin', disabled: true }).lean(),
+    groupIds.length
+      ? GroupOverride.find({ groupId: { $in: groupIds }, kind: 'plugin', disabled: true }).lean()
+      : [],
+  ])
+  return new Set([...globalOv.map(o => o.itemId), ...groupOv.map(o => o.itemId)])
+}
+
+// The current user's own plugin state: which they've turned off, and which are
+// locked off by an admin/group (shown but not re-enablable).
+router.get('/me/plugin-overrides', requireAuth, async (req, res) => {
+  try {
+    const pid = String(req.profile.profileId)
+    const [userOv, locked] = await Promise.all([
+      UserOverride.find({ profileId: pid, kind: 'plugin', disabled: true }).lean(),
+      lockedPluginIds(pid),
+    ])
+    res.json({ userDisabled: userOv.map(o => o.itemId), locked: [...locked] })
+  } catch {
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// Toggle a non-core plugin for the current user.
+router.patch('/me/overrides/plugin/:itemId', requireAuth, async (req, res) => {
+  try {
+    const pid = String(req.profile.profileId)
+    const { itemId } = req.params
+    const disabled = !!req.body.disabled
+    const target = pluginTarget(itemId)
+    if (target == null) return res.status(404).json({ error: 'Plugin not found' })
+    if (isCorePlugin(target)) return res.status(403).json({ error: 'Core plugins can’t be changed per-user' })
+    // An admin/group disable wins — allow turning further off, never on.
+    if (!disabled && (await lockedPluginIds(pid)).has(itemId)) {
+      return res.status(409).json({ error: 'This plugin is turned off by an administrator' })
+    }
+    await UserOverride.findOneAndUpdate(
+      { profileId: pid, kind: 'plugin', itemId },
+      { profileId: pid, kind: 'plugin', itemId, disabled },
+      { upsert: true, new: true },
+    )
+    res.json({ itemId, disabled })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

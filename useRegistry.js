@@ -57,6 +57,14 @@ async function fetchRegistry() {
   }
 }
 
+// Force a re-fetch of the registry + effective overrides. Used after a user
+// toggles one of their own plugins in Profile settings, so plugin-owned UI
+// (gated on isPluginEnabled) reacts live without a reload.
+async function refresh() {
+  fetched = false
+  await fetchRegistry()
+}
+
 export function useRegistry() {
   onMounted(fetchRegistry)
   // Is an app present AND enabled for the current user? `apps` is already
@@ -68,5 +76,5 @@ export function useRegistry() {
   // from the disabled set (or before overrides load) is treated as enabled. Core
   // UI a plugin owns gates on this so disabling it in Admin actually stops it.
   const isPluginEnabled = (id) => !disabledPluginIds.value.has(id)
-  return { apps, allApps, widgets, disabledWidgetIds, disabledAppIds, disabledPluginIds, loading, error, hasApp, isPluginEnabled }
+  return { apps, allApps, widgets, disabledWidgetIds, disabledAppIds, disabledPluginIds, loading, error, hasApp, isPluginEnabled, refresh }
 }

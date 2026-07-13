@@ -49,16 +49,39 @@ const props = defineProps({
   search: { type: String, default: '' },          // v-model:search
   searchPlaceholder: { type: String, default: 'Search…' },
 
+  // ── Tabs (chrome) ─────────────────────────────────────────────────────────
+  // Opt-in segmented tab bar under the header. Each entry: { key, label, icon? }
+  // where `icon` is an SVG path string. The active key is exposed to the body
+  // slot (#default="{ activeTab }") and via v-model:tab, so a modal can switch
+  // sections without every dialog being rebuilt around tabs.
+  tabs: { type: Array, default: () => [] },
+  tab: { type: String, default: '' },             // v-model:tab (optional; defaults to first tab)
+
   // ── Sizing & layout ──────────────────────────────────────────────────────
   // Preferred width. `panelClass` (below) wins if provided.
   size: { type: String, default: 'sm' },          // xs | sm | md | lg | xl
   panelClass: { type: String, default: '' },       // explicit width/appearance override
+  // Lock the panel to a constant height (instead of hugging its content) so the
+  // body scrolls and the modal doesn't jump when its content changes — e.g. when
+  // switching between tabs of differing length. `true` → 85vh; a string → that
+  // Tailwind height class (e.g. 'h-[600px]').
+  fixedHeight: { type: [Boolean, String], default: false },
   bodyClass: { type: String, default: 'px-5 pb-5 pt-1' },
   z: { type: String, default: 'z-[200]' },
 })
-const emit = defineEmits(['confirm', 'cancel', 'update:search'])
+const emit = defineEmits(['confirm', 'cancel', 'update:search', 'update:tab'])
 
 const slots = useSlots()
+
+// Tabs: controlled via v-model:tab when bound, else self-managed. `activeTab`
+// prefers the bound prop, then the last internal selection, then the first tab.
+const hasTabs = computed(() => props.tabs.length > 0)
+const internalTab = ref('')
+const activeTab = computed(() => props.tab || internalTab.value || props.tabs[0]?.key || '')
+function selectTab(key) {
+  internalTab.value = key
+  emit('update:tab', key)
+}
 
 // Comfortable, a touch wider than before — modals were feeling slim on desktop.
 const SIZES = {
@@ -69,12 +92,14 @@ const SIZES = {
   xl: 'max-w-4xl',  // 56rem
 }
 const widthClass = computed(() => props.panelClass || SIZES[props.size] || SIZES.sm)
+const heightClass = computed(() =>
+  props.fixedHeight === true ? 'h-[85vh]' : (props.fixedHeight || ''))
 
 const hasHeader = computed(() => props.header || !!slots.header)
 const hasFooter = computed(() => props.footer || !!slots.footer)
 // "Chrome" = the framed header/body/footer layout. Plain mode (none of these)
 // keeps the legacy behaviour: render #default directly, or a confirm dialog.
-const chrome = computed(() => hasHeader.value || props.searchable || hasFooter.value)
+const chrome = computed(() => hasHeader.value || props.searchable || hasFooter.value || hasTabs.value)
 
 // Button label/variant fallbacks differ by context: a plain confirm dialog is
 // destructive-by-default ("Delete"), a framed footer is a "Save" affirmative.
@@ -102,6 +127,7 @@ watch(() => props.show, (val) => {
   if (val) {
     window.addEventListener('keydown', onKeydown)
     lockScroll()
+    internalTab.value = ''   // reopen lands on the first tab (uncontrolled use)
     nextTick(() => (props.searchable ? searchInput.value?.focus() : confirmBtn.value?.focus()))
   } else {
     window.removeEventListener('keydown', onKeydown)
@@ -121,7 +147,7 @@ onUnmounted(() => {
         <div class="absolute inset-0 bg-slate-950/30 backdrop-blur-md" @pointerdown.prevent="$emit('cancel')" />
         <div
           class="tm-panel relative w-full bg-white/60 dark:bg-slate-900/55 backdrop-blur-2xl border border-white/40 dark:border-white/10 rounded-2xl shadow-2xl shadow-slate-950/25 overflow-hidden"
-          :class="[widthClass, chrome ? 'flex flex-col max-h-[88vh]' : '']"
+          :class="[widthClass, chrome ? 'flex flex-col max-h-[88vh]' : '', chrome ? heightClass : '']"
         >
           <!-- ── Chrome mode: header / search / scroll body / footer ────────── -->
           <template v-if="chrome">
@@ -145,6 +171,29 @@ onUnmounted(() => {
               </button>
             </div>
 
+            <!-- Tabs -->
+            <div v-if="hasTabs" class="px-5 sm:px-6 pt-3 pb-3 shrink-0 border-b border-black/[0.06] dark:border-white/10">
+              <div class="flex gap-1 p-1 rounded-xl bg-black/5 dark:bg-white/8" role="tablist">
+                <button
+                  v-for="tb in tabs"
+                  :key="tb.key"
+                  type="button"
+                  role="tab"
+                  :aria-selected="activeTab === tb.key"
+                  class="cursor-pointer flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                  :class="activeTab === tb.key
+                    ? 'bg-white dark:bg-white/15 text-slate-900 dark:text-white shadow-sm'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'"
+                  @click="selectTab(tb.key)"
+                >
+                  <svg v-if="tb.icon" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" :d="tb.icon" />
+                  </svg>
+                  {{ tb.label }}
+                </button>
+              </div>
+            </div>
+
             <!-- Search -->
             <div v-if="searchable" class="px-5 sm:px-6 pt-4 pb-3 shrink-0">
               <div class="relative">
@@ -164,7 +213,7 @@ onUnmounted(() => {
 
             <!-- Body -->
             <div class="flex-1 overflow-y-auto min-h-0" :class="bodyClass">
-              <slot />
+              <slot :active-tab="activeTab" />
             </div>
 
             <!-- Footer -->

@@ -1,7 +1,6 @@
 import mongoose from 'mongoose'
 import bcrypt from 'bcryptjs'
 import Profile, { colorFromName } from '../models/Profile.js'
-import LocaleConfig from '../models/LocaleConfig.js'
 import MaintenancePreset from '../plugins/maintenance/server/MaintenancePreset.js'
 
 // Shipped maintenance-banner presets, mirroring the wording of the legacy
@@ -54,16 +53,24 @@ export async function runMigrations() {
     console.log('[migration] Guest profile created')
   }
 
-  // Ensure the singleton localization config exists (base language installed
-  // and enabled for core). See core/auth-server/routes/localization.js.
-  const localeConfig = await LocaleConfig.findOne()
-  if (!localeConfig) {
-    await LocaleConfig.create({
-      installedLanguages: ['en-US'],
-      defaultLanguage: 'en-US',
-      enabled: { core: ['en-US'] },
-    })
-    console.log('[migration] LocaleConfig created')
+  // Ensure the singleton localization config exists — but only when the
+  // localization plugin is installed (its LocaleConfig model is bind-mounted at
+  // /app/plugins/localization). Absent → the platform runs in static
+  // single-language mode and there's nothing to seed. Guarded so a missing
+  // plugin never fails the migration. See plugins/localization/server/route.js.
+  try {
+    const { default: LocaleConfig } = await import('../plugins/localization/server/LocaleConfig.js')
+    const localeConfig = await LocaleConfig.findOne()
+    if (!localeConfig) {
+      await LocaleConfig.create({
+        installedLanguages: ['en-US'],
+        defaultLanguage: 'en-US',
+        enabled: { core: ['en-US'] },
+      })
+      console.log('[migration] LocaleConfig created')
+    }
+  } catch {
+    console.log('[migration] localization plugin not installed — skipping LocaleConfig seed')
   }
 
   // Seed the built-in maintenance presets once. Upsert by key so re-runs are

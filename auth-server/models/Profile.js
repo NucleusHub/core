@@ -34,7 +34,8 @@ const profileSchema = new mongoose.Schema({
   lastLoginAt: { type: Date, default: null },
   isGuest:     { type: Boolean, default: false },
   // Admin-assigned UI language (BCP-47 tag, e.g. 'cs-CZ'). null = fall back to
-  // the instance default language. See core/auth-server/routes/localization.js.
+  // the instance default language. Honored only when the localization plugin is
+  // installed; see plugins/localization/server/route.js.
   locale:      { type: String, default: null },
   // Per-user state for the "What's New" changelog modal. `lastSeenAt` is when the
   // user last dismissed it — the modal auto-opens when an announcement was

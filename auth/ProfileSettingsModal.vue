@@ -1,24 +1,34 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import TemplateModal from '../TemplateModal.vue'
 import { useI18n } from '../useI18n.js'
 import { useRegistry } from '../useRegistry.js'
+import { usePlugins } from '../usePlugins.js'
 import { useAuth, avatarUrl } from './useAuth.js'
 import AvatarCircle from './AvatarCircle.vue'
 import PinInput from './PinInput.vue'
 
 // Self-service profile settings, opened from the profile selector for the
-// currently signed-in profile. Lets a user rename themselves, recolor their
-// avatar and change their PIN (re-proving the current one). Guests have no
-// settings — the caller must not open this for a guest.
+// currently signed-in profile. A tabbed panel: Profile (name/color/photo),
+// Security (PIN), and Plugins (turn optional non-core plugins on/off for this
+// account + plugin preferences). Guests have no settings — the caller must not
+// open this for a guest.
 const props = defineProps({
   profile: { type: Object, required: true },
 })
 const emit = defineEmits(['close', 'updated'])
 
 const { t } = useI18n()
-const { isPluginEnabled } = useRegistry()
+const { isPluginEnabled, refresh: refreshRegistry } = useRegistry()
 const { authFetch, checkSession } = useAuth()
+
+// ── Tabs ───────────────────────────────────────────────────────────────────
+const TABS = [
+  { id: 'profile',  label: 'core.profiles.tabProfile' },
+  { id: 'security', label: 'core.profiles.tabSecurity' },
+  { id: 'plugins',  label: 'core.profiles.tabPlugins' },
+]
+const tab = ref('profile')
 
 // Avatar palette — mirrors auth-server/models/Profile.js COLORS.
 const COLORS = [
@@ -179,31 +189,6 @@ async function onPinComplete(pin) {
   await submitPin(pin)
 }
 
-// ── What's New (update logs) ───────────────────────────────────────────────
-// The auto-open toggle is the inverse of the profile's whatsNew.optOut flag.
-const showUpdates = ref(!(props.profile.whatsNew?.optOut))
-const savingUpdates = ref(false)
-
-async function toggleUpdates() {
-  const next = !showUpdates.value
-  showUpdates.value = next
-  savingUpdates.value = true
-  try {
-    const res = await authFetch('/api/auth/whats-new/opt-out', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ optOut: !next }),
-    })
-    if (!res.ok) throw new Error()
-    await checkSession()   // keep the shared profile ref in sync
-    emit('updated')
-  } catch {
-    showUpdates.value = !next   // revert on failure
-  } finally {
-    savingUpdates.value = false
-  }
-}
-
 async function submitPin(newPin) {
   savingPin.value = true
   pinError.value = null
@@ -229,16 +214,115 @@ async function submitPin(newPin) {
     savingPin.value = false
   }
 }
+
+// ── Plugins (self-service, non-core only) ────────────────────────────────────
+// Users toggle their OWN optional (non-core) plugins. Core plugins are
+// admin-managed and never listed here. A plugin an admin/group turned off shows
+// as locked. See /api/auth/me/overrides/plugin/:id + /me/plugin-overrides.
+const { plugins, load: loadPluginList } = usePlugins()
+const userDisabled = ref(new Set())   // ids this user turned off
+const locked = ref(new Set())         // ids an admin/group turned off (not re-enablable)
+const pluginError = ref(null)
+const pluginBusy = ref(null)          // id currently in-flight
+const pluginsLoaded = ref(false)
+
+// Non-core = the plugin's target doesn't include 'core'. Only well-formed
+// (discovered) plugins are offered.
+const nonCorePlugins = computed(() => plugins.value.filter(p =>
+  p.state === 'discovered' && Array.isArray(p.target) && !p.target.includes('core')))
+
+const isLocked = (p) => locked.value.has(p.id)
+const isPluginOn = (p) => !locked.value.has(p.id) && !userDisabled.value.has(p.id)
+
+async function loadPlugins() {
+  try {
+    await Promise.all([
+      loadPluginList(),
+      authFetch('/api/auth/me/plugin-overrides').then(async r => {
+        if (!r.ok) return
+        const d = await r.json()
+        userDisabled.value = new Set(d.userDisabled || [])
+        locked.value = new Set(d.locked || [])
+      }),
+    ])
+  } catch { /* leave empty; the tab shows the empty state */ }
+  finally { pluginsLoaded.value = true }
+}
+onMounted(loadPlugins)
+
+async function togglePlugin(p) {
+  if (isLocked(p) || pluginBusy.value) return
+  const disable = isPluginOn(p) // currently on → turn off
+  pluginBusy.value = p.id
+  pluginError.value = null
+  try {
+    const res = await authFetch(`/api/auth/me/overrides/plugin/${p.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ disabled: disable }),
+    })
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`)
+    const next = new Set(userDisabled.value)
+    disable ? next.add(p.id) : next.delete(p.id)
+    userDisabled.value = next
+    await refreshRegistry()   // plugin-owned UI reacts live (isPluginEnabled)
+  } catch (e) {
+    pluginError.value = e.message
+  } finally {
+    pluginBusy.value = null
+  }
+}
+
+// ── What's New (update logs) — a plugin preference ───────────────────────────
+// The auto-open toggle is the inverse of the profile's whatsNew.optOut flag.
+const showUpdates = ref(!(props.profile.whatsNew?.optOut))
+const savingUpdates = ref(false)
+
+async function toggleUpdates() {
+  const next = !showUpdates.value
+  showUpdates.value = next
+  savingUpdates.value = true
+  try {
+    const res = await authFetch('/api/auth/whats-new/opt-out', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ optOut: !next }),
+    })
+    if (!res.ok) throw new Error()
+    await checkSession()   // keep the shared profile ref in sync
+    emit('updated')
+  } catch {
+    showUpdates.value = !next   // revert on failure
+  } finally {
+    savingUpdates.value = false
+  }
+}
+
+// Show the Preferences block only when at least one preference applies.
+const hasPluginPreferences = computed(() => isPluginEnabled('whats-new'))
 </script>
 
 <template>
-  <TemplateModal :show="true" size="sm" z="z-[600]" @cancel="emit('close')">
-    <div class="flex flex-col max-h-[85vh]">
+  <TemplateModal :show="true" size="lg" z="z-[600]" @cancel="emit('close')">
+    <!-- Own, less-transparent surface over the template's glass panel. Fixed
+         height so the modal doesn't resize when switching tabs — each tab's body
+         scrolls within it. Capped to 85vh on short screens. -->
+    <div class="flex flex-col h-[min(36rem,85vh)] bg-white/95 dark:bg-slate-900/95">
       <!-- Header -->
-      <div class="flex items-center justify-between px-5 pt-5 pb-4 border-b border-white/30 dark:border-white/8 shrink-0">
-        <h2 class="text-sm font-semibold text-slate-900 dark:text-white">{{ t('core.profiles.settings') }}</h2>
+      <div class="flex items-center justify-between px-5 sm:px-6 pt-5 pb-4 border-b border-black/[0.06] dark:border-white/10 shrink-0">
+        <div class="flex items-center gap-3 min-w-0">
+          <AvatarCircle
+            :name="name.trim() || profile.name"
+            :color="color"
+            :emoji="profile.emoji"
+            :image="previewImage"
+            :admin="profile.role === 'admin'"
+            :size="34"
+          />
+          <h2 class="text-sm font-semibold text-slate-900 dark:text-white truncate">{{ t('core.profiles.settings') }}</h2>
+        </div>
         <button
-          class="cursor-pointer p-1.5 -mr-1 text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg transition-colors"
+          class="cursor-pointer p-1.5 -mr-1 text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors"
           :aria-label="t('core.button.close')"
           @click="emit('close')"
         >
@@ -248,138 +332,203 @@ async function submitPin(newPin) {
         </button>
       </div>
 
-      <!-- Body -->
-      <div class="flex-1 overflow-y-auto min-h-0 px-5 py-5 flex flex-col gap-5">
-        <!-- Live avatar preview + photo controls -->
-        <div class="flex flex-col items-center gap-3">
-          <button type="button"
-            class="rounded-full cursor-pointer relative group"
-            :title="previewImage ? t('core.profiles.changePhoto') : t('core.profiles.uploadPhoto')"
-            @click="fileInput?.click()">
-            <AvatarCircle
-              :name="name.trim() || profile.name"
-              :color="color"
-              :emoji="profile.emoji"
-              :image="previewImage"
-              :admin="profile.role === 'admin'"
-              :size="88"
-            />
-            <span class="absolute inset-0 rounded-full flex items-center justify-center bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity">
-              <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" />
-                <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z" />
-              </svg>
-            </span>
-          </button>
-          <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileChange" />
-          <div class="flex items-center gap-3">
-            <button type="button" class="text-xs font-semibold text-violet-700 dark:text-violet-300 hover:underline cursor-pointer" @click="fileInput?.click()">
-              {{ previewImage ? t('core.profiles.changePhoto') : t('core.profiles.uploadPhoto') }}
-            </button>
-            <button v-if="previewImage" type="button" class="text-xs font-semibold text-slate-500 dark:text-white/50 hover:text-slate-800 dark:hover:text-white cursor-pointer" @click="clearPhoto">
-              {{ t('core.profiles.removePhoto') }}
-            </button>
-          </div>
-          <p v-if="uploadError" class="text-[11px] text-red-500">{{ uploadError }}</p>
-        </div>
-
-        <!-- Name -->
-        <div>
-          <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/35 mb-1.5">{{ t('core.profiles.name') }}</label>
-          <input
-            v-model="name"
-            type="text"
-            maxlength="64"
-            class="w-full text-sm rounded-xl border border-slate-300 dark:border-white/15 bg-white/70 dark:bg-white/5 text-slate-900 dark:text-white px-3 py-2 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 transition-colors"
-            @keydown.enter.prevent="dirty && saveProfile()"
-          />
-        </div>
-
-        <!-- Color -->
-        <div>
-          <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/35 mb-1.5">{{ t('core.profiles.avatarColor') }}</label>
-          <div class="grid grid-cols-6 gap-2">
-            <button
-              v-for="c in COLORS"
-              :key="c"
-              type="button"
-              class="aspect-square rounded-full cursor-pointer transition-transform hover:scale-110"
-              :class="color === c ? 'ring-2 ring-offset-2 ring-offset-white/40 dark:ring-offset-transparent ring-slate-900 dark:ring-white' : ''"
-              :style="{ background: c }"
-              :aria-label="c"
-              @click="color = c"
-            />
-          </div>
-        </div>
-
-        <p v-if="profileError" class="text-[11px] text-red-500 -mt-1">{{ profileError }}</p>
-
-        <div class="flex items-center gap-2">
+      <!-- Tabs + content: rail on desktop, scrollable row on mobile -->
+      <div class="flex-1 min-h-0 flex flex-col sm:flex-row">
+        <nav class="shrink-0 sm:w-48 flex sm:flex-col gap-1 px-3 py-3 overflow-x-auto border-b sm:border-b-0 sm:border-r border-black/[0.06] dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.02]">
           <button
-            class="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
-            :disabled="savingProfile || !dirty || !name.trim()"
-            @click="saveProfile"
-          >{{ savingProfile ? t('core.profiles.saving') : t('core.profiles.saveChanges') }}</button>
-          <span v-if="profileSaved && !dirty" class="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-            {{ t('core.profiles.saved') }}
-          </span>
-        </div>
+            v-for="tb in TABS"
+            :key="tb.id"
+            type="button"
+            class="shrink-0 flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium cursor-pointer transition-colors text-left"
+            :class="tab === tb.id
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'text-slate-600 dark:text-white/60 hover:bg-black/5 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-white'"
+            @click="tab = tb.id"
+          >
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+              <template v-if="tb.id === 'profile'"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.5 20.25a7.5 7.5 0 0 1 15 0" /></template>
+              <template v-else-if="tb.id === 'security'"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 0h10.5a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5H6.75a1.5 1.5 0 0 1-1.5-1.5v-6a1.5 1.5 0 0 1 1.5-1.5Z" /></template>
+              <template v-else><path stroke-linecap="round" stroke-linejoin="round" d="M14.25 6.087c0-.355.186-.676.401-.959.221-.29.349-.634.349-1.003 0-1.036-1.007-1.875-2.25-1.875s-2.25.84-2.25 1.875c0 .369.128.713.349 1.003.215.283.401.604.401.959v0a.64.64 0 0 1-.657.643 48.4 48.4 0 0 1-4.163-.3c.186 1.613.293 3.25.315 4.907a.656.656 0 0 1-.658.663v0c-.355 0-.676-.186-.959-.401a1.647 1.647 0 0 0-1.003-.349c-1.036 0-1.875 1.007-1.875 2.25s.84 2.25 1.875 2.25c.369 0 .713-.128 1.003-.349.283-.215.604-.401.959-.401v0c.31 0 .555.26.532.57a48.039 48.039 0 0 1-.642 5.056c1.518.19 3.058.309 4.616.354a.64.64 0 0 0 .657-.643v0c0-.355-.186-.676-.401-.959a1.647 1.647 0 0 1-.349-1.003c0-1.036 1.007-1.875 2.25-1.875s2.25.84 2.25 1.875c0 .369-.128.713-.349 1.003-.215.283-.4.604-.4.959v0c0 .333.277.599.61.58a48.1 48.1 0 0 0 5.427-.63 48.05 48.05 0 0 0 .582-4.717.532.532 0 0 0-.533-.57v0c-.355 0-.676.186-.959.401-.29.221-.634.349-1.003.349-1.035 0-1.875-1.007-1.875-2.25s.84-2.25 1.875-2.25c.37 0 .713.128 1.003.349.283.215.604.401.96.401v0a.656.656 0 0 0 .658-.663 48.422 48.422 0 0 0-.37-5.36c-1.676.32-3.4.475-5.157.475a.64.64 0 0 1-.657-.643Z" /></template>
+            </svg>
+            {{ t(tb.label) }}
+          </button>
+        </nav>
 
-        <!-- PIN -->
-        <div class="pt-4 border-t border-white/30 dark:border-white/8">
-          <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/35 mb-2">{{ t('core.profiles.pin') }}</label>
-
-          <!-- Idle: status + trigger -->
-          <template v-if="!changingPin">
-            <p class="text-xs text-slate-500 dark:text-white/50 mb-2">
-              <span v-if="pinDone" class="inline-flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-                {{ t('core.profiles.pinUpdated') }}
-              </span>
-              <span v-else-if="hasPin">{{ t('core.profiles.pinProtected') }}</span>
-              <span v-else>{{ t('core.profiles.noPin') }}</span>
-            </p>
-            <button
-              class="px-3 py-1.5 rounded-lg text-xs font-semibold text-violet-700 dark:text-violet-300 bg-violet-500/15 hover:bg-violet-500/25 cursor-pointer transition-colors"
-              @click="startPinChange"
-            >{{ hasPin ? t('core.profiles.changePin') : t('core.profiles.setPin') }}</button>
-          </template>
-
-          <!-- Active: stepped PIN flow -->
-          <div v-else class="flex flex-col items-center gap-3">
-            <p class="text-xs text-slate-500 dark:text-white/60 text-center">{{ pinStepLabel }}</p>
-            <PinInput :key="pinStep" :error="pinError" :disabled="savingPin" @complete="onPinComplete" />
-            <button
-              class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-white/50 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
-              @click="cancelPinChange"
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
-              {{ t('core.button.cancel') }}
-            </button>
-          </div>
-        </div>
-
-        <!-- What's New (hidden when the whats-new plugin is disabled globally) -->
-        <div v-if="isPluginEnabled('whats-new')" class="pt-4 border-t border-white/30 dark:border-white/8">
-          <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/35 mb-2">{{ t('core.whatsNew.launch') }}</label>
-          <div class="flex items-center justify-between gap-3">
-            <div class="min-w-0">
-              <p class="text-xs font-medium text-slate-700 dark:text-white/70">{{ t('core.whatsNew.showUpdates') }}</p>
-              <p class="text-[11px] text-slate-400 dark:text-white/40 mt-0.5">{{ t('core.whatsNew.showUpdatesHint') }}</p>
+        <div class="flex-1 min-h-0 overflow-y-auto px-5 sm:px-6 py-5">
+          <!-- ── Profile ─────────────────────────────────────────────────── -->
+          <section v-show="tab === 'profile'" class="flex flex-col gap-5">
+            <!-- Live avatar preview + photo controls -->
+            <div class="flex flex-col items-center gap-3">
+              <button type="button"
+                class="rounded-full cursor-pointer relative group"
+                :title="previewImage ? t('core.profiles.changePhoto') : t('core.profiles.uploadPhoto')"
+                @click="fileInput?.click()">
+                <AvatarCircle
+                  :name="name.trim() || profile.name"
+                  :color="color"
+                  :emoji="profile.emoji"
+                  :image="previewImage"
+                  :admin="profile.role === 'admin'"
+                  :size="88"
+                />
+                <span class="absolute inset-0 rounded-full flex items-center justify-center bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z" />
+                  </svg>
+                </span>
+              </button>
+              <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileChange" />
+              <div class="flex items-center gap-3">
+                <button type="button" class="text-xs font-semibold text-violet-700 dark:text-violet-300 hover:underline cursor-pointer" @click="fileInput?.click()">
+                  {{ previewImage ? t('core.profiles.changePhoto') : t('core.profiles.uploadPhoto') }}
+                </button>
+                <button v-if="previewImage" type="button" class="text-xs font-semibold text-slate-500 dark:text-white/50 hover:text-slate-800 dark:hover:text-white cursor-pointer" @click="clearPhoto">
+                  {{ t('core.profiles.removePhoto') }}
+                </button>
+              </div>
+              <p v-if="uploadError" class="text-[11px] text-red-500">{{ uploadError }}</p>
             </div>
-            <button
-              type="button" role="switch" :aria-checked="showUpdates" :disabled="savingUpdates"
-              class="relative shrink-0 w-10 h-6 rounded-full transition-colors cursor-pointer disabled:opacity-50"
-              :class="showUpdates ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-white/15'"
-              @click="toggleUpdates"
-            >
-              <span
-                class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform"
-                :class="showUpdates ? 'translate-x-4' : ''"
+
+            <!-- Name -->
+            <div>
+              <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/35 mb-1.5">{{ t('core.profiles.name') }}</label>
+              <input
+                v-model="name"
+                type="text"
+                maxlength="64"
+                class="w-full text-sm rounded-xl border border-slate-300 dark:border-white/15 bg-white/70 dark:bg-white/5 text-slate-900 dark:text-white px-3 py-2 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 transition-colors"
+                @keydown.enter.prevent="dirty && saveProfile()"
               />
-            </button>
-          </div>
+            </div>
+
+            <!-- Color -->
+            <div>
+              <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/35 mb-1.5">{{ t('core.profiles.avatarColor') }}</label>
+              <div class="grid grid-cols-6 gap-2 max-w-xs">
+                <button
+                  v-for="c in COLORS"
+                  :key="c"
+                  type="button"
+                  class="aspect-square rounded-full cursor-pointer transition-transform hover:scale-110"
+                  :class="color === c ? 'ring-2 ring-offset-2 ring-offset-white dark:ring-offset-slate-900 ring-slate-900 dark:ring-white' : ''"
+                  :style="{ background: c }"
+                  :aria-label="c"
+                  @click="color = c"
+                />
+              </div>
+            </div>
+
+            <p v-if="profileError" class="text-[11px] text-red-500 -mt-1">{{ profileError }}</p>
+
+            <div class="flex items-center gap-2">
+              <button
+                class="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                :disabled="savingProfile || !dirty || !name.trim()"
+                @click="saveProfile"
+              >{{ savingProfile ? t('core.profiles.saving') : t('core.profiles.saveChanges') }}</button>
+              <span v-if="profileSaved && !dirty" class="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                {{ t('core.profiles.saved') }}
+              </span>
+            </div>
+          </section>
+
+          <!-- ── Security (PIN) ──────────────────────────────────────────── -->
+          <section v-show="tab === 'security'">
+            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/35 mb-2">{{ t('core.profiles.pin') }}</label>
+
+            <!-- Idle: status + trigger -->
+            <template v-if="!changingPin">
+              <p class="text-xs text-slate-500 dark:text-white/50 mb-2">
+                <span v-if="pinDone" class="inline-flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                  {{ t('core.profiles.pinUpdated') }}
+                </span>
+                <span v-else-if="hasPin">{{ t('core.profiles.pinProtected') }}</span>
+                <span v-else>{{ t('core.profiles.noPin') }}</span>
+              </p>
+              <button
+                class="px-3 py-1.5 rounded-lg text-xs font-semibold text-violet-700 dark:text-violet-300 bg-violet-500/15 hover:bg-violet-500/25 cursor-pointer transition-colors"
+                @click="startPinChange"
+              >{{ hasPin ? t('core.profiles.changePin') : t('core.profiles.setPin') }}</button>
+            </template>
+
+            <!-- Active: stepped PIN flow -->
+            <div v-else class="flex flex-col items-center gap-3 py-2">
+              <p class="text-xs text-slate-500 dark:text-white/60 text-center">{{ pinStepLabel }}</p>
+              <PinInput :key="pinStep" :error="pinError" :disabled="savingPin" @complete="onPinComplete" />
+              <button
+                class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-white/50 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+                @click="cancelPinChange"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
+                {{ t('core.button.cancel') }}
+              </button>
+            </div>
+          </section>
+
+          <!-- ── Plugins ─────────────────────────────────────────────────── -->
+          <section v-show="tab === 'plugins'" class="flex flex-col gap-5">
+            <div>
+              <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/35 mb-1">{{ t('core.profiles.pluginsTitle') }}</label>
+              <p class="text-[11px] text-slate-400 dark:text-white/40">{{ t('core.profiles.pluginsHint') }}</p>
+            </div>
+
+            <p v-if="pluginError" class="text-[11px] text-red-500">{{ pluginError }}</p>
+
+            <p v-if="pluginsLoaded && !nonCorePlugins.length" class="text-xs text-slate-400 dark:text-white/35 py-2">
+              {{ t('core.profiles.pluginsEmpty') }}
+            </p>
+
+            <ul v-else class="flex flex-col divide-y divide-slate-200/60 dark:divide-white/8">
+              <li v-for="p in nonCorePlugins" :key="p.id" class="flex items-center gap-3 py-3">
+                <span
+                  class="shrink-0 w-9 h-9 rounded-xl flex items-center justify-center bg-black/5 dark:bg-white/8 text-slate-600 dark:text-white/70 [&_svg]:w-5 [&_svg]:h-5"
+                  v-html="p.iconSvg || ''"
+                />
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium text-slate-900 dark:text-white truncate">{{ p.name }}</p>
+                  <p v-if="p.description" class="text-[11px] text-slate-400 dark:text-white/40 truncate">{{ p.description }}</p>
+                  <p v-if="isLocked(p)" class="text-[11px] font-medium text-amber-600 dark:text-amber-400 mt-0.5">{{ t('core.profiles.pluginLocked') }}</p>
+                </div>
+                <button
+                  type="button" role="switch" :aria-checked="isPluginOn(p)"
+                  :disabled="isLocked(p) || pluginBusy === p.id"
+                  class="relative shrink-0 w-10 h-6 rounded-full transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  :class="isPluginOn(p) ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-white/15'"
+                  @click="togglePlugin(p)"
+                >
+                  <span
+                    class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform"
+                    :class="isPluginOn(p) ? 'translate-x-4' : ''"
+                  />
+                </button>
+              </li>
+            </ul>
+
+            <!-- Plugin preferences (e.g. What's New auto-open) -->
+            <div v-if="hasPluginPreferences" class="pt-4 border-t border-black/[0.06] dark:border-white/10">
+              <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/35 mb-2">{{ t('core.profiles.pluginPreferences') }}</label>
+              <div v-if="isPluginEnabled('whats-new')" class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="text-xs font-medium text-slate-700 dark:text-white/70">{{ t('core.whatsNew.showUpdates') }}</p>
+                  <p class="text-[11px] text-slate-400 dark:text-white/40 mt-0.5">{{ t('core.whatsNew.showUpdatesHint') }}</p>
+                </div>
+                <button
+                  type="button" role="switch" :aria-checked="showUpdates" :disabled="savingUpdates"
+                  class="relative shrink-0 w-10 h-6 rounded-full transition-colors cursor-pointer disabled:opacity-50"
+                  :class="showUpdates ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-white/15'"
+                  @click="toggleUpdates"
+                >
+                  <span
+                    class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform"
+                    :class="showUpdates ? 'translate-x-4' : ''"
+                  />
+                </button>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
     </div>

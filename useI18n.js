@@ -1,10 +1,23 @@
 import { ref, watch } from 'vue'
 import { useAuth } from './auth/useAuth.js'
+// Bundled English base for the 'core' scope — the static fallback used when the
+// localization plugin is absent or disabled. This file lives in core/, so the
+// import is core/locales/en-US.json and travels in every app bundle.
+import coreFallbackEn from './locales/en-US.json'
 
 // Core localization runtime. Mirrors the module-singleton shape of useTheme.js /
-// useRegistry.js: one shared reactive state, exposed through useI18n(). The
-// auth-server resolves the full catalog (core + this app, English fallback,
-// admin overrides applied), so the client just looks keys up in a flat map.
+// useRegistry.js: one shared reactive state, exposed through useI18n().
+//
+// Localization is now an optional plugin (plugins/localization). Two modes:
+//
+//   • Dynamic (plugin installed & enabled) — the auth-server resolves the full
+//     catalog (core + this app, English fallback, admin overrides, per-app
+//     enable matrix) and the client fetches it, with runtime language switching.
+//
+//   • Static (plugin absent or disabled) — no API, no switching: the app renders
+//     in its manifest default language (en-US) from a locale file bundled at
+//     build time. Core strings come from coreFallbackEn above; each app registers
+//     its own scope's strings via registerFallback() from its entry (main.js).
 
 const API = '/api/auth/i18n'
 const FALLBACK = 'en-US'
@@ -27,6 +40,26 @@ let started = false
 const locale = ref(getCookie('nucleus-locale') || FALLBACK)
 const messages = ref({})
 const ready = ref(false)
+// Whether the localization plugin is active (multi-language). false → the app is
+// in static single-language mode; UI that offers a language picker should hide.
+const active = ref(true)
+
+// App-scope static fallback, registered by the app entry (see registerFallback).
+let appFallback = {}
+
+// Compose the static catalog: core base + this app's scope. Used whenever the
+// localization plugin isn't active.
+function applyFallback() {
+  messages.value = { ...coreFallbackEn, ...appFallback }
+}
+
+// Called once from an app's entry (main.js) with its manifest-default locale
+// file, so the app still shows its own strings when localization is disabled or
+// not installed. Safe to call before or after initI18n().
+export function registerFallback(msgs) {
+  appFallback = msgs || {}
+  if (!active.value || !started) applyFallback()
+}
 
 const cacheKey = (s, l) => `nucleus:i18n:${s}:${l}`
 
@@ -59,27 +92,59 @@ async function fetchCatalog(s, l) {
 }
 
 async function load(l) {
-  if (!l) return
+  if (!l || !active.value) return // no-op in static single-language mode
   locale.value = l
   hydrateFromCache(scope, l)
   await fetchCatalog(scope, l)
 }
 
-async function fetchDefaultLocale() {
+// Decide whether the localization plugin is active. Installed → the auth-server
+// mounts /api/auth/i18n (so /config responds); absent → the route 404s / fails.
+// Disabled → the plugin is present but turned off in Admin (we can only read the
+// disabled set once authenticated). Either not-installed or disabled → static.
+async function resolveActive() {
+  let cfg
   try {
     const res = await fetch(`${API}/config`, { credentials: 'include' })
-    if (res.ok) return (await res.json()).defaultLanguage || FALLBACK
+    if (!res.ok) return { active: false }
+    cfg = await res.json()
+  } catch {
+    return { active: false } // route not mounted → plugin not installed
+  }
+  // Installed. Honor the Admin disable toggle when we can read it; pre-auth the
+  // overrides endpoint 401s, so we optimistically stay dynamic until login.
+  try {
+    const r = await fetch('/api/auth/overrides', { credentials: 'include' })
+    if (r.ok) {
+      const disabled = (await r.json()).plugins || []
+      if (disabled.includes('localization')) return { active: false }
+    }
   } catch {}
-  return FALLBACK
+  return { active: true, defaultLanguage: cfg.defaultLanguage || FALLBACK }
 }
 
 // Begin tracking the active locale. Called once from AuthGuard (shared by every
 // app) so no per-app wiring is needed. Idempotent.
-function start(appId) {
+async function start(appId) {
   if (appId) scope = appId
   if (started) return
   started = true
 
+  // Paint immediately with the bundled static fallback. It's the final state in
+  // static mode, and a safe seed in dynamic mode until the catalog arrives.
+  applyFallback()
+
+  const status = await resolveActive()
+  active.value = status.active
+
+  if (!status.active) {
+    // Static single-language mode: manifest default (en-US), no switching.
+    applyFallback()
+    ready.value = true
+    return
+  }
+
+  // ── Dynamic mode (localization plugin active) ──
   const { profile } = useAuth()
 
   // The user's admin-assigned locale wins whenever it's known.
@@ -87,15 +152,12 @@ function start(appId) {
     if (p?.locale && p.locale !== locale.value) load(p.locale)
   }, { immediate: true })
 
-  // Paint immediately with the cookie/fallback, then align to the instance
-  // default if the user has no assigned locale (e.g. the login screen).
+  // Paint with the cookie/fallback locale, then align to the instance default if
+  // the user has no assigned locale (e.g. the login screen).
   load(locale.value)
-  ;(async () => {
-    if (!profile.value?.locale) {
-      const def = await fetchDefaultLocale()
-      if (!profile.value?.locale && def !== locale.value) load(def)
-    }
-  })()
+  if (!profile.value?.locale && status.defaultLanguage && status.defaultLanguage !== locale.value) {
+    load(status.defaultLanguage)
+  }
 }
 
 function interpolate(str, params) {
@@ -114,7 +176,7 @@ export function initI18n(appId) { start(appId) }
 
 export function useI18n(appId) {
   if (appId && !started) scope = appId
-  return { t, locale, messages, ready, initI18n: start, setLocale: load }
+  return { t, locale, messages, ready, active, initI18n: start, setLocale: load, registerFallback }
 }
 
 export { t }
