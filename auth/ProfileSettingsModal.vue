@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import TemplateModal from '../TemplateModal.vue'
+import AppTabs from '../AppTabs.vue'
 import { useI18n } from '../useI18n.js'
 import { useRegistry } from '../useRegistry.js'
 import { usePlugins } from '../usePlugins.js'
@@ -24,11 +25,13 @@ const { authFetch, checkSession } = useAuth()
 
 // ── Tabs ───────────────────────────────────────────────────────────────────
 const TABS = [
-  { id: 'profile',  label: 'core.profiles.tabProfile' },
-  { id: 'security', label: 'core.profiles.tabSecurity' },
-  { id: 'plugins',  label: 'core.profiles.tabPlugins' },
+  { id: 'profile',  label: 'core.profiles.tabProfile',  icon: 'M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.5 20.25a7.5 7.5 0 0 1 15 0' },
+  { id: 'security', label: 'core.profiles.tabSecurity', icon: 'M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 0h10.5a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5H6.75a1.5 1.5 0 0 1-1.5-1.5v-6a1.5 1.5 0 0 1 1.5-1.5Z' },
+  { id: 'plugins',  label: 'core.profiles.tabPlugins',  icon: 'M14.25 6.087c0-.355.186-.676.401-.959.221-.29.349-.634.349-1.003 0-1.036-1.007-1.875-2.25-1.875s-2.25.84-2.25 1.875c0 .369.128.713.349 1.003.215.283.401.604.401.959v0a.64.64 0 0 1-.657.643 48.4 48.4 0 0 1-4.163-.3c.186 1.613.293 3.25.315 4.907a.656.656 0 0 1-.658.663v0c-.355 0-.676-.186-.959-.401a1.647 1.647 0 0 0-1.003-.349c-1.036 0-1.875 1.007-1.875 2.25s.84 2.25 1.875 2.25c.369 0 .713-.128 1.003-.349.283-.215.604-.401.959-.401v0c.31 0 .555.26.532.57a48.039 48.039 0 0 1-.642 5.056c1.518.19 3.058.309 4.616.354a.64.64 0 0 0 .657-.643v0c0-.355-.186-.676-.401-.959a1.647 1.647 0 0 1-.349-1.003c0-1.036 1.007-1.875 2.25-1.875s2.25.84 2.25 1.875c0 .369-.128.713-.349 1.003-.215.283-.4.604-.4.959v0c0 .333.277.599.61.58a48.1 48.1 0 0 0 5.427-.63 48.05 48.05 0 0 0 .582-4.717.532.532 0 0 0-.533-.57v0c-.355 0-.676.186-.959.401-.29.221-.634.349-1.003.349-1.035 0-1.875-1.007-1.875-2.25s.84-2.25 1.875-2.25c.37 0 .713.128 1.003.349.283.215.604.401.96.401v0a.656.656 0 0 0 .658-.663 48.422 48.422 0 0 0-.37-5.36c-1.676.32-3.4.475-5.157.475a.64.64 0 0 1-.657-.643Z' },
 ]
 const tab = ref('profile')
+// The shared tab bar takes { key, label, icon }; our tabs carry i18n keys.
+const tabItems = computed(() => TABS.map(tb => ({ key: tb.id, label: t(tb.label), icon: tb.icon })))
 
 // Avatar palette — mirrors auth-server/models/Profile.js COLORS.
 const COLORS = [
@@ -334,25 +337,12 @@ const hasPluginPreferences = computed(() => isPluginEnabled('whats-new'))
 
       <!-- Tabs + content: rail on desktop, scrollable row on mobile -->
       <div class="flex-1 min-h-0 flex flex-col sm:flex-row">
-        <nav class="shrink-0 sm:w-48 flex sm:flex-col gap-1 px-3 py-3 overflow-x-auto border-b sm:border-b-0 sm:border-r border-black/[0.06] dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.02]">
-          <button
-            v-for="tb in TABS"
-            :key="tb.id"
-            type="button"
-            class="shrink-0 flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium cursor-pointer transition-colors text-left"
-            :class="tab === tb.id
-              ? 'bg-indigo-600 text-white shadow-sm'
-              : 'text-slate-600 dark:text-white/60 hover:bg-black/5 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-white'"
-            @click="tab = tb.id"
-          >
-            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-              <template v-if="tb.id === 'profile'"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.5 20.25a7.5 7.5 0 0 1 15 0" /></template>
-              <template v-else-if="tb.id === 'security'"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 0h10.5a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5H6.75a1.5 1.5 0 0 1-1.5-1.5v-6a1.5 1.5 0 0 1 1.5-1.5Z" /></template>
-              <template v-else><path stroke-linecap="round" stroke-linejoin="round" d="M14.25 6.087c0-.355.186-.676.401-.959.221-.29.349-.634.349-1.003 0-1.036-1.007-1.875-2.25-1.875s-2.25.84-2.25 1.875c0 .369.128.713.349 1.003.215.283.401.604.401.959v0a.64.64 0 0 1-.657.643 48.4 48.4 0 0 1-4.163-.3c.186 1.613.293 3.25.315 4.907a.656.656 0 0 1-.658.663v0c-.355 0-.676-.186-.959-.401a1.647 1.647 0 0 0-1.003-.349c-1.036 0-1.875 1.007-1.875 2.25s.84 2.25 1.875 2.25c.369 0 .713-.128 1.003-.349.283-.215.604-.401.959-.401v0c.31 0 .555.26.532.57a48.039 48.039 0 0 1-.642 5.056c1.518.19 3.058.309 4.616.354a.64.64 0 0 0 .657-.643v0c0-.355-.186-.676-.401-.959a1.647 1.647 0 0 1-.349-1.003c0-1.036 1.007-1.875 2.25-1.875s2.25.84 2.25 1.875c0 .369-.128.713-.349 1.003-.215.283-.4.604-.4.959v0c0 .333.277.599.61.58a48.1 48.1 0 0 0 5.427-.63 48.05 48.05 0 0 0 .582-4.717.532.532 0 0 0-.533-.57v0c-.355 0-.676.186-.959.401-.29.221-.634.349-1.003.349-1.035 0-1.875-1.007-1.875-2.25s.84-2.25 1.875-2.25c.37 0 .713.128 1.003.349.283.215.604.401.96.401v0a.656.656 0 0 0 .658-.663 48.422 48.422 0 0 0-.37-5.36c-1.676.32-3.4.475-5.157.475a.64.64 0 0 1-.657-.643Z" /></template>
-            </svg>
-            {{ t(tb.label) }}
-          </button>
-        </nav>
+        <AppTabs
+          v-model="tab"
+          variant="rail"
+          :tabs="tabItems"
+          class="shrink-0 sm:w-48 px-3 py-3 overflow-x-auto border-b sm:border-b-0 sm:border-r border-black/[0.06] dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.02]"
+        />
 
         <div class="flex-1 min-h-0 overflow-y-auto px-5 sm:px-6 py-5">
           <!-- ── Profile ─────────────────────────────────────────────────── -->

@@ -1,5 +1,6 @@
 <script setup>
 import { watch, onUnmounted, ref, nextTick, computed, useSlots } from 'vue'
+import AppTabs from './AppTabs.vue'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The one modal to rule them all.
@@ -92,8 +93,13 @@ const SIZES = {
   xl: 'max-w-4xl',  // 56rem
 }
 const widthClass = computed(() => props.panelClass || SIZES[props.size] || SIZES.sm)
+// Tabbed modals are fixed-height by default so switching between tabs of
+// differing length doesn't make the dialog jump; a caller can still pass an
+// explicit height string. Non-tabbed modals stay content-hugging unless they
+// opt in via `fixedHeight`.
+const effectiveFixedHeight = computed(() => props.fixedHeight || hasTabs.value)
 const heightClass = computed(() =>
-  props.fixedHeight === true ? 'h-[85vh]' : (props.fixedHeight || ''))
+  effectiveFixedHeight.value === true ? 'h-[85vh]' : (effectiveFixedHeight.value || ''))
 
 const hasHeader = computed(() => props.header || !!slots.header)
 const hasFooter = computed(() => props.footer || !!slots.footer)
@@ -171,28 +177,14 @@ onUnmounted(() => {
               </button>
             </div>
 
-            <!-- Tabs -->
-            <div v-if="hasTabs" class="px-5 sm:px-6 pt-3 pb-3 shrink-0 border-b border-black/[0.06] dark:border-white/10">
-              <div class="flex gap-1 p-1 rounded-xl bg-black/5 dark:bg-white/8" role="tablist">
-                <button
-                  v-for="tb in tabs"
-                  :key="tb.key"
-                  type="button"
-                  role="tab"
-                  :aria-selected="activeTab === tb.key"
-                  class="cursor-pointer flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-                  :class="activeTab === tb.key
-                    ? 'bg-white dark:bg-white/15 text-slate-900 dark:text-white shadow-sm'
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'"
-                  @click="selectTab(tb.key)"
-                >
-                  <svg v-if="tb.icon" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" :d="tb.icon" />
-                  </svg>
-                  {{ tb.label }}
-                </button>
-              </div>
-            </div>
+            <!-- Tabs — the shared underline bar (same look across the app). -->
+            <AppTabs
+              v-if="hasTabs"
+              :tabs="tabs"
+              :model-value="activeTab"
+              class="px-5 sm:px-6 shrink-0 border-b border-black/[0.06] dark:border-white/10"
+              @update:model-value="selectTab"
+            />
 
             <!-- Search -->
             <div v-if="searchable" class="px-5 sm:px-6 pt-4 pb-3 shrink-0">
