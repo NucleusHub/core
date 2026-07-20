@@ -1,6 +1,8 @@
 <script setup>
 import { ref } from 'vue'
 import { useI18n } from '../useI18n.js'
+import { Icon } from '../icons'
+import SpinnerArcIcon from '@core/assets/icons/spinner-arc.svg?component'
 
 const { t } = useI18n()
 
@@ -41,9 +43,9 @@ async function click() {
     :disabled="state === 'loading' || state === 'done'"
     @click.stop.prevent="click"
   >
-    <svg v-if="state === 'done'" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-    <svg v-else-if="state === 'loading'" class="animate-spin" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-    <svg v-else viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+    <Icon name="checkBold" v-if="state === 'done'" :sw="2.5" />
+    <SpinnerArcIcon v-else-if="state === 'loading'" class="animate-spin" width="13" height="13" />
+    <Icon name="plus" v-else :sw="2.5" />
     <span>{{ state === 'done' ? (doneLabel || t('core.echo.added')) : state === 'error' ? t('core.echo.failed') : (label || t('core.echo.add')) }}</span>
   </button>
 </template>

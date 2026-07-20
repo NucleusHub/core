@@ -10,6 +10,9 @@ import { useWhatsNew } from '../plugins/whats-new/client/useWhatsNew.js'
 import AvatarCircle from './auth/AvatarCircle.vue'
 import ProfileSelector from './auth/ProfileSelector.vue'
 import AppIcon from './AppIcon.vue'
+import { Icon } from './icons'
+import ArrowsRightLeftIcon from '@core/assets/icons/arrows-right-left.svg?component'
+import SparkleIcon from '@core/assets/icons/sparkle.svg?component'
 
 const { apps, hasApp, isPluginEnabled } = useRegistry()
 const { t } = useI18n()
@@ -85,9 +88,7 @@ function launchWhatsNew() {
             @click="emit('close')"
             class="nuc-press cursor-pointer p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <Icon name="close" class="w-4 h-4" :sw="2.5" />
           </button>
         </div>
 
@@ -122,26 +123,20 @@ function launchWhatsNew() {
               <p class="text-sm font-medium leading-tight truncate">{{ profile.name }}</p>
               <p class="text-xs text-slate-400 dark:text-slate-500">{{ t('core.sidebar.switchAccount') }}</p>
             </div>
-            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
-            </svg>
+            <ArrowsRightLeftIcon class="w-4 h-4 shrink-0" />
           </button>
         </div>
 
         <div v-if="profile && isPluginEnabled('whats-new')" class="sidebar-footer">
           <button class="admin-btn" :class="{ 'theme-light': !isDark }" @click="launchWhatsNew">
-            <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2l2.09 5.26L19.5 9.3l-5.41 2.04L12 16.6l-2.09-5.26L4.5 9.3l5.41-2.04L12 2z" />
-            </svg>
+            <SparkleIcon width="14" height="14" />
             {{ t('core.whatsNew.launch') }}
           </button>
         </div>
 
         <div v-if="showAdminLink" class="sidebar-footer">
           <a class="admin-btn" :class="{ 'theme-light': !isDark }" href="/admin/">
-            <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2L3 6v6c0 5.25 3.75 10.15 9 11.35C17.25 22.15 21 17.25 21 12V6l-9-4z" />
-            </svg>
+            <Icon name="shield" fill />
             {{ t('core.sidebar.adminConsole') }}
           </a>
         </div>

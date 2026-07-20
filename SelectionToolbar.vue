@@ -1,6 +1,7 @@
 <script setup>
 import TrashIcon from './TrashIcon.vue'
 import FavoriteHeart from './FavoriteHeart.vue'
+import { Icon } from './icons'
 
 // Shared multi-select action bar for every Nucleus app (Orbit, Prism, …), so a
 // selection toolbar looks and behaves identically everywhere. The chrome — the
@@ -43,7 +44,7 @@ defineEmits(['action', 'clear'])
             @click="$emit('clear')" :title="clearTitle" :aria-label="clearTitle"
             class="nuc-press grid place-items-center w-10 h-10 rounded-xl text-slate-300 hover:text-white hover:bg-white/12 cursor-pointer transition-colors"
           >
-            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            <Icon name="close" class="w-5 h-5" />
           </button>
 
           <span class="px-2 text-sm font-semibold whitespace-nowrap">{{ label }}</span>

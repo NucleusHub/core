@@ -2,6 +2,7 @@
 import { ref, nextTick } from 'vue'
 import EchoActionButton from './EchoActionButton.vue'
 import { useI18n } from '../useI18n.js'
+import { Icon } from '../icons'
 
 const { t } = useI18n()
 
@@ -69,11 +70,7 @@ function pick(action) {
           :class="menuOpen ? 'bg-slate-500/10 text-slate-700 dark:bg-white/10 dark:text-white' : ''"
           @click="menuOpen = !menuOpen"
         >
-          <svg
-            viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
-            stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-            class="transition-transform duration-200" :class="menuOpen ? 'rotate-45' : ''"
-          ><path d="M12 5v14M5 12h14"/></svg>
+          <Icon name="plus" class="transition-transform duration-200" :class="menuOpen ? 'rotate-45' : ''" />
         </button>
 
         <!-- Popover: one row per source. Closes on pick or outside click. -->
@@ -113,7 +110,7 @@ function pick(action) {
         :title="t('core.echo.send')"
         @click="submit"
       >
-        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+        <Icon name="send" />
       </button>
     </div>
   </div>

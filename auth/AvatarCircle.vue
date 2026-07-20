@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { avatarUrl } from './useAuth.js'
+import ShieldIcon from '@core/assets/icons/shield.svg?component'
 
 // The one avatar component. Prefer passing a whole `profile` object — the
 // name/colour/emoji/uploaded-photo/admin badge are all derived from it, so
@@ -44,9 +45,7 @@ const initials = (name) => {
       <span v-else class="avatar-initials">{{ initials(dName) }}</span>
     </div>
     <div v-if="dAdmin" class="admin-badge" :style="{ width: (size * 0.32) + 'px', height: (size * 0.32) + 'px' }">
-      <svg viewBox="0 0 24 24" fill="currentColor" style="width: 100%; height: 100%;">
-        <path d="M12 2L3 6v6c0 5.25 3.75 10.15 9 11.35C17.25 22.15 21 17.25 21 12V6l-9-4z"/>
-      </svg>
+      <ShieldIcon style="width: 100%; height: 100%;" />
     </div>
   </div>
 </template>

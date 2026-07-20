@@ -1,6 +1,8 @@
 <script setup>
 import { watch, onUnmounted, ref, nextTick, computed, useSlots } from 'vue'
 import AppTabs from './AppTabs.vue'
+import { Icon, Spinner } from './icons'
+import SearchIcon from '@core/assets/icons/search.svg?component'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The one modal to rule them all.
@@ -171,9 +173,7 @@ onUnmounted(() => {
                 aria-label="Close"
                 @click="$emit('cancel')"
               >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                <Icon name="close" class="w-4 h-4" :sw="2.5" />
               </button>
             </div>
 
@@ -189,9 +189,7 @@ onUnmounted(() => {
             <!-- Search -->
             <div v-if="searchable" class="px-5 sm:px-6 pt-4 pb-3 shrink-0">
               <div class="relative">
-                <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-slate-500 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-                </svg>
+                <SearchIcon class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-slate-500 pointer-events-none" />
                 <input
                   ref="searchInput"
                   :value="search"
@@ -230,10 +228,7 @@ onUnmounted(() => {
                     :class="confirmClass"
                     @click="$emit('confirm')"
                   >
-                    <svg v-if="busy" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                    </svg>
+                    <Spinner v-if="busy" class="w-4 h-4 animate-spin" />
                     {{ busy && busyLabel ? busyLabel : confirmText }}
                   </button>
                 </div>
@@ -264,10 +259,7 @@ onUnmounted(() => {
                   :class="confirmClass"
                   @click="$emit('confirm')"
                 >
-                  <svg v-if="busy" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                  </svg>
+                  <Spinner v-if="busy" class="w-4 h-4 animate-spin" />
                   {{ busy && busyLabel ? busyLabel : confirmText }}
                 </button>
               </div>

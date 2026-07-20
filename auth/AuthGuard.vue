@@ -9,6 +9,7 @@ import WhatsNewModal from '../../plugins/whats-new/client/WhatsNewModal.vue'
 import MadeByAttribution from '../MadeByAttribution.vue'
 import EasterEggs from '../EasterEggs.vue'
 import WidgetOverlayHost from '@widgets-core/components/WidgetOverlayHost.vue'
+import SlashIcon from '@core/assets/icons/slash.svg?component'
 
 const { isAuthenticated, checked, checkSession, profile } = useAuth()
 const { allApps, disabledAppIds, loading: registryLoading, isPluginEnabled } = useRegistry()
@@ -71,9 +72,7 @@ onMounted(() => {
          otherwise-broken SPA. -->
     <div v-if="appBlocked" class="nucleus-app-blocked">
       <div class="nucleus-app-blocked__card">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="9" /><path d="M5.6 5.6l12.8 12.8" />
-        </svg>
+        <SlashIcon width="40" height="40" />
         <h1>{{ currentApp?.name || 'This app' }} isn’t available</h1>
         <p>It’s been turned off for your account. Contact an administrator if you think this is a mistake.</p>
         <a href="/">← Back to Nucleus</a>

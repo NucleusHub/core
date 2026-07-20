@@ -8,6 +8,9 @@ import { usePlugins } from '../usePlugins.js'
 import { useAuth, avatarUrl } from './useAuth.js'
 import AvatarCircle from './AvatarCircle.vue'
 import PinInput from './PinInput.vue'
+import { Icon } from '../icons'
+import GiftIcon from '@core/assets/icons/gift.svg?component'
+import ArrowLeftIcon from '@core/assets/icons/arrow-left.svg?component'
 
 // Self-service profile settings, opened from the profile selector for the
 // currently signed-in profile. A tabbed panel: Profile (name/color/photo),
@@ -329,9 +332,7 @@ const hasPluginPreferences = computed(() => isPluginEnabled('whats-new'))
           :aria-label="t('core.button.close')"
           @click="emit('close')"
         >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <Icon name="close" class="w-4 h-4" :sw="2.5" />
         </button>
       </div>
 
@@ -362,10 +363,7 @@ const hasPluginPreferences = computed(() => isPluginEnabled('whats-new'))
                   :size="88"
                 />
                 <span class="absolute inset-0 rounded-full flex items-center justify-center bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z" />
-                  </svg>
+                  <GiftIcon class="w-6 h-6 text-white" />
                 </span>
               </button>
               <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileChange" />
@@ -418,7 +416,7 @@ const hasPluginPreferences = computed(() => isPluginEnabled('whats-new'))
                 @click="saveProfile"
               >{{ savingProfile ? t('core.profiles.saving') : t('core.profiles.saveChanges') }}</button>
               <span v-if="profileSaved && !dirty" class="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                <Icon name="check" class="w-3.5 h-3.5" :sw="2.5" />
                 {{ t('core.profiles.saved') }}
               </span>
             </div>
@@ -432,7 +430,7 @@ const hasPluginPreferences = computed(() => isPluginEnabled('whats-new'))
             <template v-if="!changingPin">
               <p class="text-xs text-slate-500 dark:text-white/50 mb-2">
                 <span v-if="pinDone" class="inline-flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                  <Icon name="check" class="w-3.5 h-3.5" :sw="2.5" />
                   {{ t('core.profiles.pinUpdated') }}
                 </span>
                 <span v-else-if="hasPin">{{ t('core.profiles.pinProtected') }}</span>
@@ -452,7 +450,7 @@ const hasPluginPreferences = computed(() => isPluginEnabled('whats-new'))
                 class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-white/50 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
                 @click="cancelPinChange"
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
+                <ArrowLeftIcon width="13" height="13" />
                 {{ t('core.button.cancel') }}
               </button>
             </div>
