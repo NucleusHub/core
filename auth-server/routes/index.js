@@ -39,6 +39,22 @@ router.use('/maintenance', maintenanceRouter)
 // "What's New" changelog (feed + per-user seen state + admin CRUD) at
 // /api/auth/whats-new/* — see plugins/whats-new/server/route.js.
 router.use('/whats-new', whatsNewRouter)
+
+// In Common is an optional cross-app plugin (targets watchlist + shelf). Its
+// server surface lives here — like the other core plugins — because the "who
+// else has this item" lookup spans identities, groups and both apps' item
+// collections, all in the one shared DB this server is already connected to.
+// Guarded dynamic import so an uninstalled plugin never crashes the auth-server;
+// when it's absent the client badges simply show nothing. See
+// plugins/in-common/server/route.js.
+try {
+  const { default: inCommonRouter } = await import('../plugins/in-common/server/route.js')
+  router.use('/in-common', inCommonRouter)
+  console.log('[in-common] plugin mounted at /api/auth/in-common')
+} catch {
+  console.log('[in-common] plugin not installed — item overlap badges disabled')
+}
+
 const secret = () => process.env.JWT_SECRET || 'nucleus-jwt-secret'
 const COOKIE = {
   httpOnly: true,
