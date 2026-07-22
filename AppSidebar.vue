@@ -136,7 +136,7 @@ function launchWhatsNew() {
 
         <div v-if="showAdminLink" class="sidebar-footer">
           <a class="admin-btn" :class="{ 'theme-light': !isDark }" href="/admin/">
-            <Icon name="shield" fill />
+            <Icon name="shield" fill class="w-3.5 h-3.5 shrink-0" />
             {{ t('core.sidebar.adminConsole') }}
           </a>
         </div>
