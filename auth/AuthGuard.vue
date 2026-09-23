@@ -1,28 +1,32 @@
 <script setup>
-import { onMounted, computed } from 'vue'
+import { onMounted, computed, defineAsyncComponent } from 'vue'
 import { useAuth } from './useAuth.js'
 import { useRegistry } from '../useRegistry.js'
 import { initI18n } from '../useI18n.js'
 import ProfileSelector from './ProfileSelector.vue'
-import MaintenanceBanner from '../../plugins/maintenance/client/MaintenanceBanner.vue'
-import WhatsNewModal from '../../plugins/whats-new/client/WhatsNewModal.vue'
+import { coreMounts } from '../usePluginExtensions.js'
 import MadeByAttribution from '../MadeByAttribution.vue'
 import EasterEggs from '../EasterEggs.vue'
-import WidgetOverlayHost from '@widgets-core/components/WidgetOverlayHost.vue'
 import SlashIcon from '@core/assets/icons/slash.svg?component'
 
 const { isAuthenticated, checked, checkSession, profile } = useAuth()
 const { allApps, disabledAppIds, loading: registryLoading, isPluginEnabled } = useRegistry()
 
-// The What's New modal is owned by the whats-new plugin; only mount it once the
-// registry (with the disabled-plugin set) has loaded and the plugin is enabled,
-// so disabling it in Admin actually stops the modal (no auto-open) — not just its
-// admin tab. Gating on load avoids a flash-mount before overrides arrive.
-const whatsNewEnabled = computed(() => !registryLoading.value && isPluginEnabled('whats-new'))
+// Plugin-owned chrome (maintenance banner, What's New modal, …) comes in through
+// the core extension point — see core/usePluginExtensions.js. Only mount once
+// the registry (with the disabled-plugin set) has loaded and the plugin is
+// enabled, so disabling it in Admin actually stops it (no auto-open) — not just
+// its admin tab. Gating on load avoids a flash-mount before overrides arrive.
+const enabledMounts = computed(() =>
+  registryLoading.value ? [] : coreMounts.filter(m => isPluginEnabled(m.pluginId)),
+)
+const publicMounts = computed(() => enabledMounts.value.filter(m => !m.auth))
+const authMounts = computed(() => enabledMounts.value.filter(m => m.auth))
 
-// Same for the maintenance banner (owned by the maintenance plugin): disabling
-// the plugin in Admin stops the banner. Default-enabled until the registry loads.
-const maintenanceEnabled = computed(() => !registryLoading.value && isPluginEnabled('maintenance'))
+// The cross-app widget overlay belongs to the optional widget package. Globbed
+// (not imported) so apps still build and run when /widgets isn't installed.
+const overlayHostLoader = Object.values(import.meta.glob('@widgets-core/components/WidgetOverlayHost.vue'))[0]
+const WidgetOverlayHost = overlayHostLoader ? defineAsyncComponent(overlayHostLoader) : null
 
 // Which app is this bundle? Match the Vite base path against each app's route
 // (base '/goals' → the app whose route is '/goals', id 'goal-calendar'). The hub
@@ -51,10 +55,9 @@ onMounted(() => {
 </script>
 
 <template>
-  <!-- Shown across every app (regardless of auth state) whenever the platform
-       is being updated — see plugins/maintenance/client/MaintenanceBanner.vue.
-       Owned by the maintenance plugin; hidden when that plugin is disabled. -->
-  <MaintenanceBanner v-if="maintenanceEnabled" />
+  <!-- Plugin mounts shown across every app regardless of auth state (e.g. the
+       maintenance banner). Hidden when the owning plugin is disabled. -->
+  <component :is="m.component" v-for="m in publicMounts" :key="m.pluginId" />
 
   <!-- "Made by _only" credit — shown across every app, in every auth state. -->
   <MadeByAttribution />
@@ -80,15 +83,15 @@ onMounted(() => {
     </div>
     <template v-else>
       <slot />
-      <!-- What's New changelog — auto-opens on login when there's an unseen
-           announcement; also opened from the sidebar launcher. Authenticated only,
-           so it can read the viewer's profile.whatsNew state. -->
-      <WhatsNewModal v-if="whatsNewEnabled" />
+      <!-- Plugin mounts for signed-in viewers (e.g. the What's New changelog,
+           which reads the viewer's profile.whatsNew state). -->
+      <component :is="m.component" v-for="m in authMounts" :key="m.pluginId" />
       <!-- Pulse widgets the user opted to float inside this app. Rendered here
            (the one component every app already wraps in) so apps never import
            widget code themselves. No-op on the hub (its own dashboard renders
-           widgets) and whenever Pulse isn't installed. See @widgets-core. -->
-      <WidgetOverlayHost />
+           widgets) and whenever Pulse or the widget package isn't installed.
+           See @widgets-core. -->
+      <WidgetOverlayHost v-if="WidgetOverlayHost" />
     </template>
   </template>
   <ProfileSelector v-else />

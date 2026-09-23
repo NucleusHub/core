@@ -6,13 +6,12 @@ import { useRegistry } from './useRegistry.js'
 import { useTheme } from './useTheme.js'
 import { useI18n } from './useI18n.js'
 import { useAuth } from './auth/useAuth.js'
-import { useWhatsNew } from '../plugins/whats-new/client/useWhatsNew.js'
+import { coreLaunchers } from './usePluginExtensions.js'
 import AvatarCircle from './auth/AvatarCircle.vue'
 import ProfileSelector from './auth/ProfileSelector.vue'
 import AppIcon from './AppIcon.vue'
 import { Icon } from './icons'
 import ArrowsRightLeftIcon from '@core/assets/icons/arrows-right-left.svg?component'
-import SparkleIcon from '@core/assets/icons/sparkle.svg?component'
 
 const { apps, hasApp, isPluginEnabled } = useRegistry()
 const { t } = useI18n()
@@ -50,7 +49,6 @@ const { theme, isDark, setTheme } = useTheme()
 const logoUrl = computed(() => isDark.value ? logoDark : logoLight)
 
 const { profile } = useAuth()
-const { open: openWhatsNew } = useWhatsNew()
 const showSwitch = ref(false)
 
 function openSwitch() {
@@ -58,9 +56,9 @@ function openSwitch() {
   showSwitch.value = true
 }
 
-function launchWhatsNew() {
+function launch(l) {
   emit('close')
-  openWhatsNew()
+  l.open()
 }
 </script>
 
@@ -127,12 +125,15 @@ function launchWhatsNew() {
           </button>
         </div>
 
-        <div v-if="profile && isPluginEnabled('whats-new')" class="sidebar-footer">
-          <button class="admin-btn" :class="{ 'theme-light': !isDark }" @click="launchWhatsNew">
-            <SparkleIcon width="14" height="14" />
-            {{ t('core.whatsNew.launch') }}
-          </button>
-        </div>
+        <!-- Plugin launchers (e.g. What's New) — see core/usePluginExtensions.js. -->
+        <template v-if="profile">
+          <div v-for="l in coreLaunchers.filter(l => isPluginEnabled(l.pluginId))" :key="l.pluginId + l.labelKey" class="sidebar-footer">
+            <button class="admin-btn" :class="{ 'theme-light': !isDark }" @click="launch(l)">
+              <component :is="l.icon" v-if="l.icon" width="14" height="14" />
+              {{ t(l.labelKey) }}
+            </button>
+          </div>
+        </template>
 
         <div v-if="showAdminLink" class="sidebar-footer">
           <a class="admin-btn" :class="{ 'theme-light': !isDark }" href="/admin/">

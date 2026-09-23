@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser'
 import mongoose from 'mongoose'
 import router from './routes/index.js'
 import { runMigrations } from './utils/migration.js'
+import { runPluginMigrations } from './serverPlugins.js'
 
 const app = express()
 const PORT = process.env.PORT || 3005
@@ -23,6 +24,7 @@ mongoose
   .then(async () => {
     console.log('Connected to MongoDB')
     await runMigrations()
+    await runPluginMigrations()
     app.listen(PORT, () => console.log(`Auth server on :${PORT}`))
   })
   .catch(err => { console.error('MongoDB connection failed:', err); process.exit(1) })

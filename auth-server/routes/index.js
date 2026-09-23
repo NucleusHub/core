@@ -13,47 +13,16 @@ import Group from '../models/Group.js'
 import GroupOverride from '../models/GroupOverride.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { resolveViewer, filterProfiles } from '../visibility.js'
-import maintenanceRouter from '../plugins/maintenance/server/route.js'
-import whatsNewRouter from '../plugins/whats-new/server/route.js'
+import { mountPluginRoutes } from '../serverPlugins.js'
 
 const router = Router()
 
-// Localization is an optional plugin. Its server code is bind-mounted at
-// /app/plugins/localization; mount the /api/auth/i18n surface only when the
-// plugin is installed. When it's absent, the platform runs in static
-// single-language mode and every app falls back to its manifest default locale
-// file (see core/useI18n.js). Guarded so a missing plugin never crashes the
-// auth-server. See plugins/localization/server/route.js.
-try {
-  const { default: localizationRouter } = await import('../plugins/localization/server/route.js')
-  router.use('/i18n', localizationRouter)
-  console.log('[i18n] localization plugin mounted at /api/auth/i18n')
-} catch {
-  console.log('[i18n] localization plugin not installed — static single-language mode')
-}
-
-// Maintenance-banner control (presets + on/off) at /api/auth/maintenance/* —
-// see plugins/maintenance/server/route.js.
-router.use('/maintenance', maintenanceRouter)
-
-// "What's New" changelog (feed + per-user seen state + admin CRUD) at
-// /api/auth/whats-new/* — see plugins/whats-new/server/route.js.
-router.use('/whats-new', whatsNewRouter)
-
-// In Common is an optional cross-app plugin (targets watchlist + shelf). Its
-// server surface lives here — like the other core plugins — because the "who
-// else has this item" lookup spans identities, groups and both apps' item
-// collections, all in the one shared DB this server is already connected to.
-// Guarded dynamic import so an uninstalled plugin never crashes the auth-server;
-// when it's absent the client badges simply show nothing. See
-// plugins/in-common/server/route.js.
-try {
-  const { default: inCommonRouter } = await import('../plugins/in-common/server/route.js')
-  router.use('/in-common', inCommonRouter)
-  console.log('[in-common] plugin mounted at /api/auth/in-common')
-} catch {
-  console.log('[in-common] plugin not installed — item overlap badges disabled')
-}
+// Optional plugin surfaces (localization at /i18n, maintenance, whats-new,
+// in-common, …) — discovered from the installed plugins, never named here. When
+// localization is absent the platform runs in static single-language mode (see
+// core/useI18n.js); other plugins' clients likewise render nothing without
+// their server. See ../serverPlugins.js.
+await mountPluginRoutes(router)
 
 const secret = () => process.env.JWT_SECRET || 'nucleus-jwt-secret'
 const COOKIE = {

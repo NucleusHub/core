@@ -4,12 +4,11 @@ import { LiquidGlass } from '@zaosoula/liquid-glass-vue/components'
 import { useI18n } from '../useI18n.js'
 import { useAuth } from './useAuth.js'
 import { useRegistry } from '../useRegistry.js'
-import { useWhatsNew } from '../../plugins/whats-new/client/useWhatsNew.js'
+import { coreLaunchers } from '../usePluginExtensions.js'
 import AvatarCircle from './AvatarCircle.vue'
 import PinInput from './PinInput.vue'
 import ProfileSettingsModal from './ProfileSettingsModal.vue'
 import { Icon } from '../icons'
-import SparkleOutlineIcon from '@core/assets/icons/sparkle-outline.svg?component'
 import CloseIcon from '@core/assets/icons/close.svg?component'
 import ArrowLeftIcon from '@core/assets/icons/arrow-left.svg?component'
 
@@ -22,13 +21,11 @@ const emit = defineEmits(['close'])
 const { t } = useI18n()
 const { login, completeTempLogin, profile: currentProfile } = useAuth()
 const { isPluginEnabled } = useRegistry()
-const { open: openWhatsNew } = useWhatsNew()
-
-// Open the What's New changelog: close this switcher first so the modal (mounted
-// in AuthGuard) shows on its own.
-function openLog() {
+// Open a plugin launcher (e.g. What's New): close this switcher first so the
+// plugin's modal (mounted in AuthGuard) shows on its own.
+function launch(l) {
   emit('close')
-  openWhatsNew()
+  l.open()
 }
 
 const profiles = ref([])
@@ -240,12 +237,14 @@ async function createProfile() {
       <!-- Corner controls: settings (own profile) + close. In-flow header row so
            they never overlap the (potentially tall, wrapping) profile grid on phones. -->
       <div v-if="closeable && !selected && !creating" class="relative z-10 shrink-0 flex items-center justify-end gap-2.5">
-        <button v-if="currentProfile && isPluginEnabled('whats-new')"
-          @click="openLog"
-          :title="t('core.whatsNew.launch')" :aria-label="t('core.whatsNew.launch')"
-          class="w-11 h-11 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-colors cursor-pointer">
-          <SparkleOutlineIcon class="w-6 h-6" />
-        </button>
+        <template v-if="currentProfile">
+          <button v-for="l in coreLaunchers.filter(l => isPluginEnabled(l.pluginId))" :key="l.pluginId + l.labelKey"
+            @click="launch(l)"
+            :title="t(l.labelKey)" :aria-label="t(l.labelKey)"
+            class="w-11 h-11 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-colors cursor-pointer">
+            <component :is="l.iconOutline || l.icon" v-if="l.iconOutline || l.icon" class="w-6 h-6" />
+          </button>
+        </template>
         <button v-if="currentProfile && !currentProfile.isGuest"
           @click="settingsFor = { ...currentProfile }"
           :title="t('core.profiles.settings')" :aria-label="t('core.profiles.settings')"

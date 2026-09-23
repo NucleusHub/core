@@ -6,6 +6,7 @@ import { useI18n } from '../useI18n.js'
 import { useRegistry } from '../useRegistry.js'
 import { usePlugins } from '../usePlugins.js'
 import { useAuth, avatarUrl } from './useAuth.js'
+import { corePreferences } from '../usePluginExtensions.js'
 import AvatarCircle from './AvatarCircle.vue'
 import PinInput from './PinInput.vue'
 import { Icon } from '../icons'
@@ -279,33 +280,11 @@ async function togglePlugin(p) {
   }
 }
 
-// ── What's New (update logs) — a plugin preference ───────────────────────────
-// The auto-open toggle is the inverse of the profile's whatsNew.optOut flag.
-const showUpdates = ref(!(props.profile.whatsNew?.optOut))
-const savingUpdates = ref(false)
-
-async function toggleUpdates() {
-  const next = !showUpdates.value
-  showUpdates.value = next
-  savingUpdates.value = true
-  try {
-    const res = await authFetch('/api/auth/whats-new/opt-out', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ optOut: !next }),
-    })
-    if (!res.ok) throw new Error()
-    await checkSession()   // keep the shared profile ref in sync
-    emit('updated')
-  } catch {
-    showUpdates.value = !next   // revert on failure
-  } finally {
-    savingUpdates.value = false
-  }
-}
-
-// Show the Preferences block only when at least one preference applies.
-const hasPluginPreferences = computed(() => isPluginEnabled('whats-new'))
+// ── Plugin preferences ────────────────────────────────────────────────────────
+// Contributed by enabled plugins through the core extension point (e.g. the
+// What's New auto-open toggle) — see core/usePluginExtensions.js. The block is
+// shown only when at least one applies.
+const pluginPreferences = computed(() => corePreferences.filter(p => isPluginEnabled(p.pluginId)))
 </script>
 
 <template>
@@ -496,25 +475,9 @@ const hasPluginPreferences = computed(() => isPluginEnabled('whats-new'))
             </ul>
 
             <!-- Plugin preferences (e.g. What's New auto-open) -->
-            <div v-if="hasPluginPreferences" class="pt-4 border-t border-black/[0.06] dark:border-white/10">
+            <div v-if="pluginPreferences.length" class="pt-4 border-t border-black/[0.06] dark:border-white/10 space-y-3">
               <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/35 mb-2">{{ t('core.profiles.pluginPreferences') }}</label>
-              <div v-if="isPluginEnabled('whats-new')" class="flex items-center justify-between gap-3">
-                <div class="min-w-0">
-                  <p class="text-xs font-medium text-slate-700 dark:text-white/70">{{ t('core.whatsNew.showUpdates') }}</p>
-                  <p class="text-[11px] text-slate-400 dark:text-white/40 mt-0.5">{{ t('core.whatsNew.showUpdatesHint') }}</p>
-                </div>
-                <button
-                  type="button" role="switch" :aria-checked="showUpdates" :disabled="savingUpdates"
-                  class="relative shrink-0 w-10 h-6 rounded-full transition-colors cursor-pointer disabled:opacity-50"
-                  :class="showUpdates ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-white/15'"
-                  @click="toggleUpdates"
-                >
-                  <span
-                    class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform"
-                    :class="showUpdates ? 'translate-x-4' : ''"
-                  />
-                </button>
-              </div>
+              <component :is="p.component" v-for="(p, i) in pluginPreferences" :key="p.pluginId + i" :profile="profile" @updated="emit('updated')" />
             </div>
           </section>
         </div>
