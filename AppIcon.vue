@@ -8,12 +8,11 @@ import Squares2x2Icon from '@core/assets/icons/squares-2x2.svg?component'
 const props = defineProps({
   svg: { type: String, default: '' },
 })
-
-const FALLBACK = '<Squares2x2Icon />'
 </script>
 
 <template>
-  <span class="app-icon" v-html="svg || FALLBACK" />
+  <span v-if="svg" class="app-icon" v-html="svg" />
+  <span v-else class="app-icon"><Squares2x2Icon /></span>
 </template>
 
 <style scoped>

@@ -70,7 +70,7 @@ function pick(action) {
           :class="menuOpen ? 'bg-slate-500/10 text-slate-700 dark:bg-white/10 dark:text-white' : ''"
           @click="menuOpen = !menuOpen"
         >
-          <Icon name="plus" class="transition-transform duration-200" :class="menuOpen ? 'rotate-45' : ''" />
+          <Icon width="20" height="20" name="plus" class="transition-transform duration-200" :class="menuOpen ? 'rotate-45' : ''" />
         </button>
 
         <!-- Popover: one row per source. Closes on pick or outside click. -->
@@ -110,7 +110,7 @@ function pick(action) {
         :title="t('core.echo.send')"
         @click="submit"
       >
-        <Icon name="send" />
+        <Icon width="17" height="17" name="send" />
       </button>
     </div>
   </div>

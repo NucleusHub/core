@@ -43,9 +43,9 @@ async function click() {
     :disabled="state === 'loading' || state === 'done'"
     @click.stop.prevent="click"
   >
-    <Icon name="checkBold" v-if="state === 'done'" :sw="2.5" />
+    <Icon width="13" height="13" name="checkBold" v-if="state === 'done'" :sw="2.5" />
     <SpinnerArcIcon v-else-if="state === 'loading'" class="animate-spin" width="13" height="13" />
-    <Icon name="plus" v-else :sw="2.5" />
+    <Icon width="13" height="13" name="plus" v-else :sw="2.5" />
     <span>{{ state === 'done' ? (doneLabel || t('core.echo.added')) : state === 'error' ? t('core.echo.failed') : (label || t('core.echo.add')) }}</span>
   </button>
 </template>
