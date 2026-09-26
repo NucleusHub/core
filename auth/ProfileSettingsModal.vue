@@ -13,11 +13,6 @@ import { Icon } from '../icons'
 import GiftIcon from '@core/assets/icons/gift.svg?component'
 import ArrowLeftIcon from '@core/assets/icons/arrow-left.svg?component'
 
-// Self-service profile settings, opened from the profile selector for the
-// currently signed-in profile. A tabbed panel: Profile (name/color/photo),
-// Security (PIN), and Plugins (turn optional non-core plugins on/off for this
-// account + plugin preferences). Guests have no settings — the caller must not
-// open this for a guest.
 const props = defineProps({
   profile: { type: Object, required: true },
 })
@@ -27,39 +22,33 @@ const { t } = useI18n()
 const { isPluginEnabled, refresh: refreshRegistry } = useRegistry()
 const { authFetch, checkSession } = useAuth()
 
-// ── Tabs ───────────────────────────────────────────────────────────────────
 const TABS = [
   { id: 'profile',  label: 'core.profiles.tabProfile',  icon: 'M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.5 20.25a7.5 7.5 0 0 1 15 0' },
   { id: 'security', label: 'core.profiles.tabSecurity', icon: 'M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 0h10.5a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5H6.75a1.5 1.5 0 0 1-1.5-1.5v-6a1.5 1.5 0 0 1 1.5-1.5Z' },
   { id: 'plugins',  label: 'core.profiles.tabPlugins',  icon: 'M14.25 6.087c0-.355.186-.676.401-.959.221-.29.349-.634.349-1.003 0-1.036-1.007-1.875-2.25-1.875s-2.25.84-2.25 1.875c0 .369.128.713.349 1.003.215.283.401.604.401.959v0a.64.64 0 0 1-.657.643 48.4 48.4 0 0 1-4.163-.3c.186 1.613.293 3.25.315 4.907a.656.656 0 0 1-.658.663v0c-.355 0-.676-.186-.959-.401a1.647 1.647 0 0 0-1.003-.349c-1.036 0-1.875 1.007-1.875 2.25s.84 2.25 1.875 2.25c.369 0 .713-.128 1.003-.349.283-.215.604-.401.959-.401v0c.31 0 .555.26.532.57a48.039 48.039 0 0 1-.642 5.056c1.518.19 3.058.309 4.616.354a.64.64 0 0 0 .657-.643v0c0-.355-.186-.676-.401-.959a1.647 1.647 0 0 1-.349-1.003c0-1.036 1.007-1.875 2.25-1.875s2.25.84 2.25 1.875c0 .369-.128.713-.349 1.003-.215.283-.4.604-.4.959v0c0 .333.277.599.61.58a48.1 48.1 0 0 0 5.427-.63 48.05 48.05 0 0 0 .582-4.717.532.532 0 0 0-.533-.57v0c-.355 0-.676.186-.959.401-.29.221-.634.349-1.003.349-1.035 0-1.875-1.007-1.875-2.25s.84-2.25 1.875-2.25c.37 0 .713.128 1.003.349.283.215.604.401.96.401v0a.656.656 0 0 0 .658-.663 48.422 48.422 0 0 0-.37-5.36c-1.676.32-3.4.475-5.157.475a.64.64 0 0 1-.657-.643Z' },
 ]
 const tab = ref('profile')
-// The shared tab bar takes { key, label, icon }; our tabs carry i18n keys.
 const tabItems = computed(() => TABS.map(tb => ({ key: tb.id, label: t(tb.label), icon: tb.icon })))
 
-// Avatar palette — mirrors auth-server/models/Profile.js COLORS.
+// Must match COLORS in auth-server/models/Profile.js.
 const COLORS = [
   '#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f97316',
   '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#06b6d4',
   '#a855f7', '#f43f5e',
 ]
 
-// ── Name / color / photo ──────────────────────────────────────────────────────
 const name = ref(props.profile.name ?? '')
 const color = ref(props.profile.color ?? COLORS[0])
 const savingProfile = ref(false)
 const profileError = ref(null)
 const profileSaved = ref(false)
 
-// Avatar photo. `imageData` is a pending, not-yet-saved data URL; `removeImage`
-// requests clearing an existing photo. Neither is persisted until Save.
 const fileInput = ref(null)
 const imageData = ref(null)
 const removeImage = ref(false)
 const uploadError = ref(null)
 
 const hasImage = computed(() => !!props.profile.hasImage)
-// What the preview (and, after save, the avatar) shows right now.
 const previewImage = computed(() => {
   if (imageData.value) return imageData.value
   if (removeImage.value) return null
@@ -71,8 +60,6 @@ const dirty = computed(() =>
   color.value !== props.profile.color ||
   !!imageData.value || removeImage.value)
 
-// Center-crop an uploaded image to a square and downscale it, so what we store
-// (and ship on every avatar request) stays small regardless of the source file.
 function fileToSquareDataUrl(file, size = 256) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file)
@@ -112,7 +99,6 @@ async function onFileChange(e) {
 function clearPhoto() {
   imageData.value = null
   uploadError.value = null
-  // Only mark for removal if there's actually a saved photo to remove.
   removeImage.value = hasImage.value
 }
 
@@ -135,7 +121,7 @@ async function saveProfile() {
     imageData.value = null
     removeImage.value = false
     profileSaved.value = true
-    await checkSession()   // refresh the shared profile ref (sidebar avatar, etc.)
+    await checkSession()
     emit('updated')
   } catch (e) {
     profileError.value = e.message
@@ -144,10 +130,9 @@ async function saveProfile() {
   }
 }
 
-// ── PIN ──────────────────────────────────────────────────────────────────────
 const hasPin = computed(() => !!props.profile.hasPin)
 const changingPin = ref(false)
-const pinStep = ref('current')       // 'current' | 'new' | 'confirm'
+const pinStep = ref('current')
 const currentPin = ref('')
 const firstNewPin = ref('')
 const pinError = ref(null)
@@ -186,7 +171,6 @@ async function onPinComplete(pin) {
     pinStep.value = 'confirm'
     return
   }
-  // confirm
   if (pin !== firstNewPin.value) {
     firstNewPin.value = ''
     pinStep.value = 'new'
@@ -213,7 +197,6 @@ async function submitPin(newPin) {
     emit('updated')
   } catch (e) {
     pinError.value = e.message
-    // A wrong current PIN sends us back to the start of the flow.
     if (hasPin.value) { pinStep.value = 'current'; currentPin.value = '' }
     else { pinStep.value = 'new' }
     firstNewPin.value = ''
@@ -222,19 +205,13 @@ async function submitPin(newPin) {
   }
 }
 
-// ── Plugins (self-service, non-core only) ────────────────────────────────────
-// Users toggle their OWN optional (non-core) plugins. Core plugins are
-// admin-managed and never listed here. A plugin an admin/group turned off shows
-// as locked. See /api/auth/me/overrides/plugin/:id + /me/plugin-overrides.
 const { plugins, load: loadPluginList } = usePlugins()
-const userDisabled = ref(new Set())   // ids this user turned off
-const locked = ref(new Set())         // ids an admin/group turned off (not re-enablable)
+const userDisabled = ref(new Set())
+const locked = ref(new Set())
 const pluginError = ref(null)
-const pluginBusy = ref(null)          // id currently in-flight
+const pluginBusy = ref(null)
 const pluginsLoaded = ref(false)
 
-// Non-core = the plugin's target doesn't include 'core'. Only well-formed
-// (discovered) plugins are offered.
 const nonCorePlugins = computed(() => plugins.value.filter(p =>
   p.state === 'discovered' && Array.isArray(p.target) && !p.target.includes('core')))
 
@@ -259,7 +236,7 @@ onMounted(loadPlugins)
 
 async function togglePlugin(p) {
   if (isLocked(p) || pluginBusy.value) return
-  const disable = isPluginOn(p) // currently on → turn off
+  const disable = isPluginOn(p)
   pluginBusy.value = p.id
   pluginError.value = null
   try {
@@ -272,7 +249,7 @@ async function togglePlugin(p) {
     const next = new Set(userDisabled.value)
     disable ? next.add(p.id) : next.delete(p.id)
     userDisabled.value = next
-    await refreshRegistry()   // plugin-owned UI reacts live (isPluginEnabled)
+    await refreshRegistry()
   } catch (e) {
     pluginError.value = e.message
   } finally {
@@ -280,20 +257,12 @@ async function togglePlugin(p) {
   }
 }
 
-// ── Plugin preferences ────────────────────────────────────────────────────────
-// Contributed by enabled plugins through the core extension point (e.g. the
-// What's New auto-open toggle) — see core/usePluginExtensions.js. The block is
-// shown only when at least one applies.
 const pluginPreferences = computed(() => corePreferences.filter(p => isPluginEnabled(p.pluginId)))
 </script>
 
 <template>
   <TemplateModal :show="true" size="lg" z="z-[600]" @cancel="emit('close')">
-    <!-- Own, less-transparent surface over the template's glass panel. Fixed
-         height so the modal doesn't resize when switching tabs — each tab's body
-         scrolls within it. Capped to 85vh on short screens. -->
     <div class="flex flex-col h-[min(36rem,85vh)] bg-white/95 dark:bg-slate-900/95">
-      <!-- Header -->
       <div class="flex items-center justify-between px-5 sm:px-6 pt-5 pb-4 border-b border-black/[0.06] dark:border-white/10 shrink-0">
         <div class="flex items-center gap-3 min-w-0">
           <AvatarCircle
@@ -315,7 +284,6 @@ const pluginPreferences = computed(() => corePreferences.filter(p => isPluginEna
         </button>
       </div>
 
-      <!-- Tabs + content: rail on desktop, scrollable row on mobile -->
       <div class="flex-1 min-h-0 flex flex-col sm:flex-row">
         <AppTabs
           v-model="tab"
@@ -325,9 +293,7 @@ const pluginPreferences = computed(() => corePreferences.filter(p => isPluginEna
         />
 
         <div class="flex-1 min-h-0 overflow-y-auto px-5 sm:px-6 py-5">
-          <!-- ── Profile ─────────────────────────────────────────────────── -->
           <section v-show="tab === 'profile'" class="flex flex-col gap-5">
-            <!-- Live avatar preview + photo controls -->
             <div class="flex flex-col items-center gap-3">
               <button type="button"
                 class="rounded-full cursor-pointer relative group"
@@ -357,7 +323,6 @@ const pluginPreferences = computed(() => corePreferences.filter(p => isPluginEna
               <p v-if="uploadError" class="text-[11px] text-red-500">{{ uploadError }}</p>
             </div>
 
-            <!-- Name -->
             <div>
               <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/35 mb-1.5">{{ t('core.profiles.name') }}</label>
               <input
@@ -369,7 +334,6 @@ const pluginPreferences = computed(() => corePreferences.filter(p => isPluginEna
               />
             </div>
 
-            <!-- Color -->
             <div>
               <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/35 mb-1.5">{{ t('core.profiles.avatarColor') }}</label>
               <div class="grid grid-cols-6 gap-2 max-w-xs">
@@ -401,11 +365,9 @@ const pluginPreferences = computed(() => corePreferences.filter(p => isPluginEna
             </div>
           </section>
 
-          <!-- ── Security (PIN) ──────────────────────────────────────────── -->
           <section v-show="tab === 'security'">
             <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/35 mb-2">{{ t('core.profiles.pin') }}</label>
 
-            <!-- Idle: status + trigger -->
             <template v-if="!changingPin">
               <p class="text-xs text-slate-500 dark:text-white/50 mb-2">
                 <span v-if="pinDone" class="inline-flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400">
@@ -421,7 +383,6 @@ const pluginPreferences = computed(() => corePreferences.filter(p => isPluginEna
               >{{ hasPin ? t('core.profiles.changePin') : t('core.profiles.setPin') }}</button>
             </template>
 
-            <!-- Active: stepped PIN flow -->
             <div v-else class="flex flex-col items-center gap-3 py-2">
               <p class="text-xs text-slate-500 dark:text-white/60 text-center">{{ pinStepLabel }}</p>
               <PinInput :key="pinStep" :error="pinError" :disabled="savingPin" @complete="onPinComplete" />
@@ -435,7 +396,6 @@ const pluginPreferences = computed(() => corePreferences.filter(p => isPluginEna
             </div>
           </section>
 
-          <!-- ── Plugins ─────────────────────────────────────────────────── -->
           <section v-show="tab === 'plugins'" class="flex flex-col gap-5">
             <div>
               <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/35 mb-1">{{ t('core.profiles.pluginsTitle') }}</label>
@@ -474,7 +434,6 @@ const pluginPreferences = computed(() => corePreferences.filter(p => isPluginEna
               </li>
             </ul>
 
-            <!-- Plugin preferences (e.g. What's New auto-open) -->
             <div v-if="pluginPreferences.length" class="pt-4 border-t border-black/[0.06] dark:border-white/10 space-y-3">
               <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/35 mb-2">{{ t('core.profiles.pluginPreferences') }}</label>
               <component :is="p.component" v-for="(p, i) in pluginPreferences" :key="p.pluginId + i" :profile="profile" @updated="emit('updated')" />

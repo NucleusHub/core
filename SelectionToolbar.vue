@@ -3,26 +3,10 @@ import TrashIcon from './TrashIcon.vue'
 import FavoriteHeart from './FavoriteHeart.vue'
 import { Icon } from './icons'
 
-// Shared multi-select action bar for every Nucleus app (Orbit, Prism, …), so a
-// selection toolbar looks and behaves identically everywhere. The chrome — the
-// floating pill, the count, the divider and the clear button — lives here; each
-// app passes its own `actions` (declaratively) and localized strings, keeping
-// this component i18n-agnostic.
-//
-// actions: [{ key, label, icon (SVG path `d`), danger?, fill?, colorClass?, iconTrash?, iconHeart? }]
-//   danger      → destructive (rose hover)
-//   fill        → render the icon filled (e.g. an active favorite heart)
-//   colorClass  → override icon tint for an active/toggled state
-//   iconTrash   → animated open-on-hover trash (see core/TrashIcon.vue)
-//   iconHeart   → favorite heart that blooms red from the centre (see core/FavoriteHeart.vue)
-//
-// Icon-only buttons keep it compact — it already fits a narrow phone screen; the
-// count text is short enough to stay. Centered via a flex wrapper (not a
-// transform) so the enter/leave animation is a clean vertical slide from below.
 defineProps({
   show: { type: Boolean, default: false },
   count: { type: Number, default: 0 },
-  label: { type: String, default: '' },   // localized "N selected"
+  label: { type: String, default: '' },
   actions: { type: Array, default: () => [] },
   clearTitle: { type: String, default: 'Clear selection' },
 })

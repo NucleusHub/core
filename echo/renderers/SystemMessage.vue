@@ -1,6 +1,4 @@
 <script setup>
-// Built-in renderer for system messages (joins, leaves, renames, automated
-// notices). payload = { text }. Rendered as a divider with the text centred.
 defineProps({
   payload: { type: Object, required: true },
 })

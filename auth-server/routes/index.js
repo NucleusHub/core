@@ -17,11 +17,6 @@ import { mountPluginRoutes } from '../serverPlugins.js'
 
 const router = Router()
 
-// Optional plugin surfaces (localization at /i18n, maintenance, whats-new,
-// in-common, …) — discovered from the installed plugins, never named here. When
-// localization is absent the platform runs in static single-language mode (see
-// core/useI18n.js); other plugins' clients likewise render nothing without
-// their server. See ../serverPlugins.js.
 await mountPluginRoutes(router)
 
 const secret = () => process.env.JWT_SECRET || 'nucleus-jwt-secret'
@@ -31,9 +26,6 @@ const COOKIE = {
   maxAge: 30 * 24 * 60 * 60 * 1000,
   path: '/',
 }
-
-// ── Brute-force guard on /login ──────────────────────────────────────────────
-// 10 attempts per IP per 15 minutes, reset on success.
 
 const loginAttempts = new Map()
 const RATE_WINDOW_MS = 15 * 60 * 1000
@@ -54,8 +46,6 @@ function resetLoginRate(ip) {
   loginAttempts.delete(ip)
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
 function isValidId(id) {
   return mongoose.Types.ObjectId.isValid(id)
 }
@@ -66,13 +56,10 @@ function isValidPin(pin) {
   return PIN_RE.test(String(pin).toUpperCase())
 }
 
-// Accepted avatar image data URLs, and a hard byte cap (~3MB of base64) that
-// still leaves headroom under the express.json limit. Images are resized
-// client-side, so a well-behaved upload is far smaller than this.
+// ~3MB base64 cap, kept under the express.json limit.
 const IMAGE_DATA_URL_RE = /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/i
 const MAX_IMAGE_LEN = 3_000_000
 
-// Split a data URL into its mime type and decoded bytes, or null if malformed.
 function parseDataUrl(dataUrl) {
   const m = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i.exec(String(dataUrl))
   if (!m) return null
@@ -83,15 +70,12 @@ function parseDataUrl(dataUrl) {
   }
 }
 
-// Generate a random 4-character hex one-time PIN (0–9, A–F).
 function randomPin() {
   const chars = '0123456789ABCDEF'
   let s = ''
   for (let i = 0; i < 4; i++) s += chars[randomInt(16)]
   return s
 }
-
-// ── Profile list ────────────────────────────────────────────────────────────
 
 router.get('/profiles', async (req, res) => {
   try {
@@ -118,12 +102,9 @@ router.get('/profiles', async (req, res) => {
       hasImage: !!p.image,
       imageUpdatedAt: p.imageUpdatedAt,
     }))
-    // Group-visibility filter (Home/Garaz) — self-contained, see ../visibility.js.
-    // No-op unless state/visibility.json lists groups. The debug header echoes the
-    // IP the server sees for this device, so you can fill visibility.json.ips.
+    // Debug header exposes the IP the server sees, for filling visibility.json.ips.
     const viewer = resolveViewer(req)
     res.set('X-Nucleus-Viewer-Ip', viewer.ip || '')
-    // ?picker=1 → profile picker / account switcher: guests may see the list.
     const picker = req.query.picker === '1' || req.query.picker === 'true'
     res.json(filterProfiles(mapped, viewer, { picker }))
   } catch {
@@ -131,9 +112,7 @@ router.get('/profiles', async (req, res) => {
   }
 })
 
-// ── Create profile ──────────────────────────────────────────────────────────
-// Allowed without auth only when no admin exists yet (first-run bootstrap).
-
+// Allowed without auth only for first-run bootstrap (no admin yet).
 router.post('/profiles', async (req, res) => {
   try {
     const adminCount = await Profile.countDocuments({ role: 'admin', isGuest: false })
@@ -146,9 +125,7 @@ router.post('/profiles', async (req, res) => {
       } catch {
         return res.status(401).json({ error: 'Invalid token' })
       }
-      // Re-check the role against the DB rather than trusting the token's `role`
-      // claim: tokens live 30 days, so a since-demoted admin's stale token must
-      // not still authorize creating profiles (including new admins).
+      // Re-check role in DB: tokens live 30 days, so a demoted admin's token must not authorize this.
       const actor = await Profile.findById(claim.profileId).select('role').lean()
       if (!actor || actor.role !== 'admin') return res.status(403).json({ error: 'Admin required' })
     }
@@ -161,12 +138,8 @@ router.post('/profiles', async (req, res) => {
     if (color !== undefined && color !== null && color !== '' && !/^#[0-9a-fA-F]{3,8}$/.test(color)) {
       return res.status(400).json({ error: 'Invalid color' })
     }
-    // New profiles are regular users. The exception is first-run bootstrap:
-    // the very first profile (no admin yet) becomes admin so there's always
-    // an initial admin to manage the rest.
     const safeRole = adminCount === 0 ? 'admin' : (role === 'admin' ? 'admin' : 'user')
-    // Admins must always have a PIN: a PIN-less profile is logged into from the
-    // picker with zero credentials, so a PIN-less admin = unauthenticated takeover.
+    // A PIN-less admin would allow an unauthenticated takeover via the picker.
     if (safeRole === 'admin' && (pin === undefined || pin === null || pin === '')) {
       return res.status(400).json({ error: 'Admin profiles require a PIN' })
     }
@@ -176,15 +149,11 @@ router.post('/profiles', async (req, res) => {
       name: name.trim().slice(0, 64),
       role: safeRole,
       pin: pinHash,
-      // Temporary only makes sense alongside an actual PIN to log in with first.
       pinTemporary: isTemp,
-      // Keep the plaintext of a one-time PIN so an admin can read it back later.
       pinTempPlain: isTemp ? String(pin).toUpperCase() : null,
       emoji: emoji ? String(emoji).slice(0, 8) : null,
       color: color || colorFromName(name),
       locale: locale ? String(locale).slice(0, 20) : null,
-      // Start caught up: a brand-new profile never gets the What's New modal on
-      // first login, only announcements published after they joined.
       whatsNew: { lastSeenAt: new Date() },
     })
     res.status(201).json({
@@ -196,8 +165,6 @@ router.post('/profiles', async (req, res) => {
     res.status(400).json({ error: err.message })
   }
 })
-
-// ── Update profile (name / emoji / color / role) ────────────────────────────
 
 router.patch('/profiles/:id', requireAuth, async (req, res) => {
   try {
@@ -211,11 +178,7 @@ router.patch('/profiles/:id', requireAuth, async (req, res) => {
     if (emoji !== undefined) update.emoji = emoji ? String(emoji).slice(0, 8) : null
     if (color !== undefined) update.color = /^#[0-9a-fA-F]{3,8}$/.test(color) ? color : undefined
     if (role !== undefined && req.profile.role === 'admin') update.role = role === 'admin' ? 'admin' : 'user'
-    // Admin-assigned UI language. `null`/'' clears it (fall back to the default).
     if (locale !== undefined) update.locale = locale ? String(locale).slice(0, 20) : null
-    // Uploaded avatar: null/'' clears it (back to emoji/initials); otherwise a
-    // validated, size-capped image data URL. imageUpdatedAt drives client-side
-    // cache-busting of the avatar endpoint.
     if (image !== undefined) {
       if (image === null || image === '') {
         update.image = null
@@ -231,8 +194,6 @@ router.patch('/profiles/:id', requireAuth, async (req, res) => {
 
     if (update.color === undefined) delete update.color
 
-    // Guard the last admin: demoting the only remaining admin would lock everyone
-    // out of administration, so it's refused.
     if (update.role === 'user') {
       const target = await Profile.findById(req.params.id).select('role').lean()
       if (target?.role === 'admin') {
@@ -241,8 +202,7 @@ router.patch('/profiles/:id', requireAuth, async (req, res) => {
       }
     }
 
-    // Don't create a credential-free admin: a profile must already have a PIN
-    // before it can be promoted (admins are logged into via PIN, never PIN-less).
+    // Never promote a PIN-less profile: admins must always have a PIN.
     if (update.role === 'admin') {
       const target = await Profile.findById(req.params.id).select('pin').lean()
       if (target && !target.pin) {
@@ -259,12 +219,7 @@ router.patch('/profiles/:id', requireAuth, async (req, res) => {
   }
 })
 
-// ── Avatar image ──────────────────────────────────────────────────────────────
-// Serves a profile's uploaded avatar as raw image bytes. Public (no auth) so it
-// renders on the profile picker before sign-in — consistent with the picker,
-// which already exposes names/colors/emoji. Clients cache-bust with ?v=<ts>
-// from imageUpdatedAt, so the response is safely long-lived + immutable.
-
+// Public so the picker can render it pre-login; cache-busted via ?v=, so immutable.
 router.get('/profiles/:id/avatar', async (req, res) => {
   try {
     if (!isValidId(req.params.id)) return res.status(400).json({ error: 'Invalid profile ID' })
@@ -280,8 +235,6 @@ router.get('/profiles/:id/avatar', async (req, res) => {
   }
 })
 
-// ── Change PIN ──────────────────────────────────────────────────────────────
-
 router.patch('/profiles/:id/pin', requireAuth, async (req, res) => {
   try {
     if (!isValidId(req.params.id)) return res.status(400).json({ error: 'Invalid profile ID' })
@@ -295,26 +248,19 @@ router.patch('/profiles/:id/pin', requireAuth, async (req, res) => {
 
     const target = await Profile.findById(req.params.id).select('role pin isGuest')
     if (!target) return res.status(404).json({ error: 'Not found' })
-    // Guests have no credentials — a PIN would be meaningless.
     if (target.isGuest) return res.status(400).json({ error: 'Guest profiles cannot have a PIN' })
 
-    // Self-service change: re-prove the current PIN before replacing it, so a
-    // walk-up on an already-unlocked session can't silently lock a user out.
-    // (Admins reset other users' PINs via the one-time-PIN endpoint instead.)
+    // Re-prove the current PIN so a walk-up on an unlocked session can't lock the user out.
     if (isOwn && target.pin) {
       const ok = await bcrypt.compare(String(currentPin || '').toUpperCase(), target.pin)
       if (!ok) return res.status(401).json({ error: 'Wrong current PIN' })
     }
 
     const pinHash = pin ? await bcrypt.hash(String(pin).toUpperCase(), 10) : null
-    // Admins must keep a PIN — clearing it would make the account loginable from
-    // the picker with no credentials. Block removing an admin's PIN.
+    // Admins must keep a PIN; PIN-less means credential-free picker login.
     if (!pinHash && target.role === 'admin') {
       return res.status(400).json({ error: 'Admins must keep a PIN' })
     }
-    // This path is the user choosing their own PIN (or clearing it): the PIN
-    // becomes permanent and any one-time PIN plaintext is wiped. Admins issue
-    // one-time PINs through the dedicated reset endpoint below, not here.
     await Profile.findByIdAndUpdate(req.params.id, {
       pin: pinHash,
       pinTemporary: !!pinHash && !!temporary,
@@ -325,11 +271,6 @@ router.patch('/profiles/:id/pin', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Server error' })
   }
 })
-
-// ── Reset PIN (admin-issued one-time PIN) ────────────────────────────────────
-// Generates a fresh one-time PIN, returns its plaintext so the admin can relay
-// it, and forces the user to choose their own on next sign-in. The plaintext is
-// kept (pinTempPlain) so the admin can read it back until the user changes it.
 
 router.post('/profiles/:id/pin/reset', requireAdmin, async (req, res) => {
   try {
@@ -349,9 +290,6 @@ router.post('/profiles/:id/pin/reset', requireAdmin, async (req, res) => {
   }
 })
 
-// Admin-only: read back the active one-time PIN (plaintext) for a profile, so the
-// config modal can keep showing it until the user replaces it. Returns null pin
-// when there is no active one-time PIN.
 router.get('/profiles/:id/pin-temp', requireAdmin, async (req, res) => {
   try {
     if (!isValidId(req.params.id)) return res.status(400).json({ error: 'Invalid profile ID' })
@@ -367,15 +305,7 @@ router.get('/profiles/:id/pin-temp', requireAdmin, async (req, res) => {
   }
 })
 
-// ── Delete profile ──────────────────────────────────────────────────────────
-// Destructive: the admin client first tears down the user's data in every app
-// (Orbit/Echo/Goals/Watchlist/Pulse), then calls DELETE here to drop group
-// membership, per-user overrides and the profile itself. Both the pre-flight
-// check and the delete require the acting admin to re-enter their own PIN, so
-// the irreversible teardown only runs once the PIN is confirmed.
-
-// Verify the acting admin's PIN and that the target profile may be deleted.
-// Returns { status, error } on failure, or { target } on success.
+// Pre-flight and delete both require the acting admin's PIN.
 async function authorizeProfileDeletion(req) {
   if (!isValidId(req.params.id)) return { status: 400, error: 'Invalid profile ID' }
   const target = await Profile.findById(req.params.id)
@@ -384,7 +314,6 @@ async function authorizeProfileDeletion(req) {
   if (String(req.profile.profileId) === String(target._id)) {
     return { status: 400, error: "You can't delete your own profile" }
   }
-  // Admins must be demoted to a regular user before they can be deleted.
   if (target.role === 'admin') {
     return { status: 400, error: 'Demote this admin to a user before deleting' }
   }
@@ -399,7 +328,6 @@ async function authorizeProfileDeletion(req) {
   return { target }
 }
 
-// Pre-flight: confirm the admin's PIN before the client runs the data teardown.
 router.post('/profiles/:id/confirm-delete', requireAdmin, async (req, res) => {
   try {
     const r = await authorizeProfileDeletion(req)
@@ -415,7 +343,6 @@ router.delete('/profiles/:id', requireAdmin, async (req, res) => {
     const r = await authorizeProfileDeletion(req)
     if (r.error) return res.status(r.status).json({ error: r.error })
     const id = String(req.params.id)
-    // Drop the user from any groups they belonged to, plus their override rows.
     await Group.updateMany({ memberIds: id }, { $pull: { memberIds: id } })
     await UserOverride.deleteMany({ profileId: id })
     await r.target.deleteOne()
@@ -424,8 +351,6 @@ router.delete('/profiles/:id', requireAdmin, async (req, res) => {
     res.status(500).json({ error: 'Server error' })
   }
 })
-
-// ── Login ───────────────────────────────────────────────────────────────────
 
 router.post('/login', async (req, res) => {
   const ip = req.ip || req.socket?.remoteAddress || 'unknown'
@@ -440,10 +365,7 @@ router.post('/login', async (req, res) => {
     const profile = await Profile.findById(profileId)
     if (!profile) return res.status(404).json({ error: 'Profile not found' })
 
-    // Defense-in-depth for legacy data: an admin with no PIN must never get a
-    // credential-free session. New admins are required to have a PIN; this
-    // catches any pre-existing PIN-less admin (recoverable via another admin's
-    // reset). Regular profiles may still be PIN-less by design (picker login).
+    // Legacy guard: a PIN-less admin must never get a credential-free session.
     if (profile.role === 'admin' && !profile.pin) {
       return res.status(403).json({ error: 'This admin profile has no PIN. Ask another admin to reset it.' })
     }
@@ -456,10 +378,7 @@ router.post('/login', async (req, res) => {
 
     resetLoginRate(ip)
 
-    // A temporary (one-time) PIN does NOT establish a session: the user must
-    // choose their own PIN first (see /login/set-pin). Until they do, the
-    // temporary PIN stays valid, so backing out or reloading just returns them
-    // to the profile selector.
+    // A temporary PIN grants no session until /login/set-pin.
     if (profile.pinTemporary) {
       return res.json({
         pinTemporary: true,
@@ -486,10 +405,6 @@ router.post('/login', async (req, res) => {
     res.status(500).json({ error: 'Server error' })
   }
 })
-
-// ── Complete a temporary-PIN login ───────────────────────────────────────────
-// The user re-proves the temporary PIN and sets their own. Only on success is a
-// session established. If they never call this, the temporary PIN is untouched.
 
 router.post('/login/set-pin', async (req, res) => {
   const ip = req.ip || req.socket?.remoteAddress || 'unknown'
@@ -535,14 +450,10 @@ router.post('/login/set-pin', async (req, res) => {
   }
 })
 
-// ── Logout ──────────────────────────────────────────────────────────────────
-
 router.post('/logout', requireAuth, (req, res) => {
   res.clearCookie('nucleus_token', { path: '/' })
   res.json({ ok: true })
 })
-
-// ── Me ──────────────────────────────────────────────────────────────────────
 
 router.get('/me', requireAuth, async (req, res) => {
   try {
@@ -558,10 +469,6 @@ router.get('/me', requireAuth, async (req, res) => {
   }
 })
 
-// ── Global app/widget overrides (admin-controlled, affects all users) ────────
-
-// Lists of globally-DISABLED ids. Any authenticated client reads this to hide
-// disabled apps/widgets for everyone.
 router.get('/overrides', requireAuth, async (_req, res) => {
   try {
     const all = await RegistryOverride.find({ disabled: true }).lean()
@@ -575,7 +482,6 @@ router.get('/overrides', requireAuth, async (_req, res) => {
   }
 })
 
-// Admin-only: globally enable/disable an app, widget or plugin for ALL users.
 router.patch('/overrides/:kind/:id', requireAdmin, async (req, res) => {
   try {
     const { kind, id } = req.params
@@ -592,13 +498,7 @@ router.patch('/overrides/:kind/:id', requireAdmin, async (req, res) => {
   }
 })
 
-// ── Per-user overrides (admin-managed; global overrides always win) ──────────
-
-// Effective disabled set for the CURRENT user, resolving Global > group > user.
-// Because every level can only DISABLE (default is enabled) and groups AND
-// together, the result is simply the union of disabled ids across all levels:
-//   global ∪ (every group the user belongs to) ∪ this user's overrides.
-// Clients (useRegistry) filter apps/widgets by this.
+// Levels can only disable, so the effective set is global ∪ user's groups ∪ user.
 router.get('/effective-overrides', requireAuth, async (req, res) => {
   try {
     const pid = String(req.profile.profileId)
@@ -622,7 +522,6 @@ router.get('/effective-overrides', requireAuth, async (req, res) => {
   }
 })
 
-// Admin: a specific user's per-user disabled set.
 router.get('/users/:id/overrides', requireAdmin, async (req, res) => {
   try {
     const all = await UserOverride.find({ profileId: req.params.id, disabled: true }).lean()
@@ -635,7 +534,6 @@ router.get('/users/:id/overrides', requireAdmin, async (req, res) => {
   }
 })
 
-// Admin: enable/disable an app or widget for one user.
 router.patch('/users/:id/overrides/:kind/:itemId', requireAdmin, async (req, res) => {
   try {
     const { id, kind, itemId } = req.params
@@ -652,16 +550,9 @@ router.patch('/users/:id/overrides/:kind/:itemId', requireAdmin, async (req, res
   }
 })
 
-// ── Self-service plugin toggles (current user, NON-CORE plugins only) ────────
-// Users can turn optional (non-core) plugins on/off for their own account from
-// Profile settings. Core plugins own platform-wide behavior (maintenance banner,
-// localization, changelog) and stay admin-only. A global/group disable always
-// wins — the user can't re-enable what an admin turned off.
-
-// Plugin dirs are bind-mounted at /app/plugins; this file is /app/routes/index.js.
+// Plugins are bind-mounted at /app/plugins.
 const PLUGINS_DIR = process.env.PLUGINS_DIR || join(dirname(fileURLToPath(import.meta.url)), '..', 'plugins')
 
-// A plugin's declared `target` from its manifest, or null if it can't be read.
 // `id` is validated to a safe slug first (no path traversal).
 function pluginTarget(id) {
   if (!/^[a-z0-9][a-z0-9-]*$/i.test(id)) return null
@@ -674,7 +565,6 @@ function pluginTarget(id) {
 const isCorePlugin = (target) =>
   target === 'core' || (Array.isArray(target) && target.includes('core'))
 
-// Plugin ids the current user can't re-enable: disabled globally or by a group.
 async function lockedPluginIds(pid) {
   const groups = await Group.find({ memberIds: pid }).select('_id').lean()
   const groupIds = groups.map(g => String(g._id))
@@ -687,8 +577,6 @@ async function lockedPluginIds(pid) {
   return new Set([...globalOv.map(o => o.itemId), ...groupOv.map(o => o.itemId)])
 }
 
-// The current user's own plugin state: which they've turned off, and which are
-// locked off by an admin/group (shown but not re-enablable).
 router.get('/me/plugin-overrides', requireAuth, async (req, res) => {
   try {
     const pid = String(req.profile.profileId)
@@ -702,7 +590,6 @@ router.get('/me/plugin-overrides', requireAuth, async (req, res) => {
   }
 })
 
-// Toggle a non-core plugin for the current user.
 router.patch('/me/overrides/plugin/:itemId', requireAuth, async (req, res) => {
   try {
     const pid = String(req.profile.profileId)
@@ -726,11 +613,6 @@ router.patch('/me/overrides/plugin/:itemId', requireAuth, async (req, res) => {
   }
 })
 
-// ── Groups ───────────────────────────────────────────────────────────────────
-// A group bundles users and applies its own app/widget rules (GroupOverride) to
-// every member, plus an optional shared Orbit directory. See /effective-overrides
-// for how group rules combine with global/per-user ones.
-
 function serializeGroup(g) {
   return {
     _id: String(g._id),
@@ -743,16 +625,12 @@ function serializeGroup(g) {
   }
 }
 
-// Normalize the sharing flags: a joint Prism album mirrors the Orbit shared
-// folder, so it only makes sense when shared storage is on and an album exists.
 function normalizeSharing({ sharedOrbit, sharedPrism, prismAlbumJoint }) {
   const so = !!sharedOrbit
   const sp = !!sharedPrism
   return { sharedOrbit: so, sharedPrism: sp, prismAlbumJoint: sp && so && !!prismAlbumJoint }
 }
 
-// Groups the CURRENT user belongs to (used by Orbit + the hub). Includes the
-// sharing flags so Orbit/Prism know which shared directories/albums to surface.
 router.get('/my-groups', requireAuth, async (req, res) => {
   try {
     const groups = await Group.find({ memberIds: String(req.profile.profileId) })
@@ -766,7 +644,6 @@ router.get('/my-groups', requireAuth, async (req, res) => {
   }
 })
 
-// Admin: list every group (with members + sharedOrbit).
 router.get('/groups', requireAdmin, async (_req, res) => {
   try {
     const groups = await Group.find().sort({ name: 1 }).lean()
@@ -776,7 +653,6 @@ router.get('/groups', requireAdmin, async (_req, res) => {
   }
 })
 
-// Admin: create a group.
 router.post('/groups', requireAdmin, async (req, res) => {
   try {
     const name = String(req.body.name ?? '').trim()
@@ -792,7 +668,6 @@ router.post('/groups', requireAdmin, async (req, res) => {
   }
 })
 
-// Admin: update a group's name / members / sharedOrbit toggle.
 router.patch('/groups/:id', requireAdmin, async (req, res) => {
   try {
     if (!isValidId(req.params.id)) return res.status(404).json({ error: 'Not found' })
@@ -806,8 +681,6 @@ router.patch('/groups/:id', requireAdmin, async (req, res) => {
       if (!Array.isArray(req.body.memberIds)) return res.status(400).json({ error: 'memberIds must be an array' })
       update.memberIds = req.body.memberIds.map(String)
     }
-    // Sharing flags interact (a joint Prism album needs shared storage), so
-    // resolve them against the current values as one coherent set.
     const touchesSharing = ['sharedOrbit', 'sharedPrism', 'prismAlbumJoint'].some((k) => req.body[k] !== undefined)
     if (touchesSharing) {
       const current = await Group.findById(req.params.id).select('sharedOrbit sharedPrism prismAlbumJoint').lean()
@@ -826,9 +699,6 @@ router.patch('/groups/:id', requireAdmin, async (req, res) => {
   }
 })
 
-// Admin: delete a group (and its override rows). Any shared Orbit files are
-// handled separately by the admin client via Orbit's teardown endpoint before
-// this is called.
 router.delete('/groups/:id', requireAdmin, async (req, res) => {
   try {
     if (!isValidId(req.params.id)) return res.status(404).json({ error: 'Not found' })
@@ -841,7 +711,6 @@ router.delete('/groups/:id', requireAdmin, async (req, res) => {
   }
 })
 
-// Admin: a group's app/widget disabled set.
 router.get('/groups/:id/overrides', requireAdmin, async (req, res) => {
   try {
     const all = await GroupOverride.find({ groupId: req.params.id, disabled: true }).lean()
@@ -854,7 +723,6 @@ router.get('/groups/:id/overrides', requireAdmin, async (req, res) => {
   }
 })
 
-// Admin: enable/disable an app or widget for one group.
 router.patch('/groups/:id/overrides/:kind/:itemId', requireAdmin, async (req, res) => {
   try {
     const { id, kind, itemId } = req.params

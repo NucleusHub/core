@@ -1,25 +1,10 @@
 <script setup>
-/* ─────────────────────────────────────────────────────────────────────────────
-   Ambient delights — the quiet, hidden touches that make Nucleus fun to live in.
-   Mounted once from core/auth/AuthGuard.vue, so these run across every app in
-   every auth state, with zero per-app wiring.
-
-   Two things live here:
-     1. Konami code (↑ ↑ ↓ ↓ ← → ← → B A) → a confetti burst + a glass toast.
-     2. Tab-away title tease — when you leave the tab, the browser title turns
-        into a little "come back" nudge, and restores the instant you return.
-
-   Both are strictly cosmetic and self-contained: no network, no state, and a
-   graceful no-op under prefers-reduced-motion (the confetti engine bows out on
-   its own; the toast simply appears without motion).
-   ───────────────────────────────────────────────────────────────────────────── */
 import { ref, onMounted, onUnmounted } from 'vue'
 import { celebrate } from './confetti.js'
 import { useI18n } from './useI18n.js'
 
 const { t } = useI18n()
 
-// ── Konami code ──────────────────────────────────────────────────────────────
 const SEQUENCE = [
   'ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown',
   'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a',
@@ -29,7 +14,6 @@ const toastVisible = ref(false)
 let toastTimer = null
 
 function onKeydown(e) {
-  // Ignore while typing in a field — the sequence should never fire mid-compose.
   const el = e.target
   if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return
 
@@ -49,7 +33,6 @@ function trigger() {
   toastTimer = setTimeout(() => { toastVisible.value = false }, 3400)
 }
 
-// ── Tab-away title tease ───────────────────────────────────────────────────────
 let originalTitle = ''
 let awayIndex = 0
 
@@ -73,7 +56,6 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
   document.removeEventListener('visibilitychange', onVisibility)
   clearTimeout(toastTimer)
-  // Never leave a teased title behind if this unmounts while hidden.
   if (originalTitle) document.title = originalTitle
 })
 </script>
@@ -141,7 +123,6 @@ onUnmounted(() => {
   to   { transform: rotate(360deg) scale(1); }
 }
 
-/* Enter/leave — a soft rise, matching the shared --nuc-ease feel. */
 .egg-toast-enter-active { transition: opacity 0.32s cubic-bezier(0.22, 1, 0.36, 1), transform 0.32s cubic-bezier(0.22, 1, 0.36, 1); }
 .egg-toast-leave-active { transition: opacity 0.24s ease, transform 0.24s ease; }
 .egg-toast-enter-from,

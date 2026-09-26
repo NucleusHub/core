@@ -1,31 +1,14 @@
-/* ─────────────────────────────────────────────────────────────────────────────
-   Nucleus motion — a shared, subtle, premium motion vocabulary.
-
-   One import (`@import "../../core/assets/motion.css";` from each app's main.css)
-   gives every app the same easing curves, entrance reveals, stagger, and hover
-   micro-interactions, so motion reads as one system across the ecosystem.
-
-   Everything here is quiet by design: short travel, gentle easing, and a hard
-   stop under prefers-reduced-motion. Reach for these utilities instead of
-   hand-rolling per-app keyframes.
-   ───────────────────────────────────────────────────────────────────────────── */
-
 :root {
-  /* Signature ease — a soft overshoot-free ease-out already used by the modal.
-     Everything that "arrives" (panels, cards, reveals) uses this. */
   --nuc-ease: cubic-bezier(0.22, 1, 0.36, 1);
-  /* Standard material ease for state changes (color, small transforms). */
   --nuc-ease-std: cubic-bezier(0.4, 0, 0.2, 1);
 
   --nuc-dur-fast: 0.16s;
   --nuc-dur: 0.24s;
   --nuc-dur-slow: 0.5s;
 
-  /* Per-item stagger step; overridable inline via style="--nuc-step: 40ms". */
   --nuc-step: 55ms;
 }
 
-/* ── Keyframes ──────────────────────────────────────────────────────────────── */
 @keyframes nuc-fade-up {
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: none; }
@@ -43,7 +26,6 @@
   to   { opacity: 1; transform: none; }
 }
 
-/* Ambient background-blob drift — long, lazy, non-repeating-feeling loops. */
 @keyframes nuc-blob-a {
   0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
   50%      { transform: translate3d(6%, 8%, 0) scale(1.12); }
@@ -57,20 +39,15 @@
   50%      { transform: translate3d(-42%, -60%, 0) scale(1.18); opacity: 0.85; }
 }
 
-/* Skeleton / loading shimmer. */
 @keyframes nuc-shimmer {
   from { background-position: -180% 0; }
   to   { background-position: 180% 0; }
 }
 
-/* ── Entrance utilities ──────────────────────────────────────────────────────── */
-/* Drop these on any element that should reveal on mount. */
 .nuc-in       { animation: nuc-fade-up var(--nuc-dur-slow) var(--nuc-ease) both; }
 .nuc-in-fade  { animation: nuc-fade var(--nuc-dur-slow) var(--nuc-ease) both; }
 .nuc-in-scale { animation: nuc-scale-in var(--nuc-dur) var(--nuc-ease) both; }
 
-/* Stagger: put .nuc-stagger on a container; direct children reveal in sequence.
-   Covers up to 16 children; anything beyond arrives with the last delay. */
 .nuc-stagger > * { animation: nuc-fade-up var(--nuc-dur-slow) var(--nuc-ease) both; }
 .nuc-stagger > *:nth-child(1)  { animation-delay: calc(var(--nuc-step) * 0); }
 .nuc-stagger > *:nth-child(2)  { animation-delay: calc(var(--nuc-step) * 1); }
@@ -89,12 +66,7 @@
 .nuc-stagger > *:nth-child(15) { animation-delay: calc(var(--nuc-step) * 14); }
 .nuc-stagger > *:nth-child(n+16) { animation-delay: calc(var(--nuc-step) * 15); }
 
-/* ── Micro-interactions ──────────────────────────────────────────────────────── */
-/* Gentle rise + shadow bloom on hover; a barely-there press. Apply to cards,
-   tiles, list rows that already have their own background. */
-/* Transitions list common state props too, so adding this class never cancels
-   an element's existing color/background hover fade (this stylesheet loads
-   after Tailwind, so its `transition` would otherwise win and drop them). */
+/* Lists color/background too: this loads after Tailwind and would otherwise drop their hover fades. */
 .nuc-lift {
   transition: transform var(--nuc-dur) var(--nuc-ease),
               box-shadow var(--nuc-dur) var(--nuc-ease),
@@ -110,15 +82,12 @@
 }
 .nuc-lift:active { transform: translateY(-1px); }
 
-/* Tactile press for buttons/icons — quick scale-down on click. */
 .nuc-press {
   transition: transform var(--nuc-dur-fast) var(--nuc-ease-std),
               color 0.15s, background-color 0.15s, border-color 0.15s, opacity 0.15s;
 }
 .nuc-press:active { transform: scale(0.94); }
 
-/* Underline that grows from the left on hover; put on inline links/tabs.
-   Requires position: relative on the element. */
 .nuc-underline { position: relative; }
 .nuc-underline::after {
   content: "";
@@ -133,12 +102,6 @@
 }
 .nuc-underline:hover::after { transform: scaleX(1); }
 
-/* ── Icon micro-interactions ─────────────────────────────────────────────────── */
-/* Drop one of these on an icon (usually an <svg>) to give it a little life on
-   hover. Each fires either when the icon itself is hovered OR when an enclosing
-   Tailwind `.group` is hovered — so they work inside icon buttons that already
-   use group-hover, without extra wiring. Quiet, single-gesture, and disabled
-   under reduced motion like everything else here. */
 .nuc-cog        { transition: transform 0.7s var(--nuc-ease); transform-origin: 50% 50%; }
 .group:hover .nuc-cog,        .nuc-cog:hover        { transform: rotate(180deg); }
 
@@ -163,16 +126,9 @@
 .nuc-nudge-left { transition: transform var(--nuc-dur) var(--nuc-ease); }
 .group:hover .nuc-nudge-left, .nuc-nudge-left:hover { transform: translateX(-3px); }
 
-/* Trash-can lid — put `.nuc-lid` on the lid <path> of a two-part trash SVG (rim +
-   handle separate from the can body; see core/TrashIcon.vue). The lid tips open
-   only while its own `.nuc-trash` control is hovered — deliberately NOT keyed off
-   a generic `.group`, so hovering a whole card never springs the lid.
-   transform-box makes the SVG-local origin resolve against the lid's own box. */
 .nuc-lid { transition: transform var(--nuc-dur) var(--nuc-ease); transform-box: fill-box; transform-origin: bottom left; }
 .nuc-trash:hover .nuc-lid, .nuc-lid:hover { transform: translateY(-1.5px) rotate(-16deg); }
 
-/* Bell/attach-style attention wiggle — a quick, damped shake, pivoting from the
-   top so it reads like a ringing bell rather than a spin. */
 .nuc-wiggle { transform-origin: 50% 15%; }
 .group:hover .nuc-wiggle,     .nuc-wiggle:hover     { animation: nuc-wiggle 0.55s var(--nuc-ease-std); }
 @keyframes nuc-wiggle {
@@ -183,7 +139,6 @@
   75% { transform: rotate(3deg); }
 }
 
-/* Shimmer surface for skeletons. Pair with a base background color. */
 .nuc-shimmer {
   background-image: linear-gradient(
     100deg,
@@ -203,7 +158,6 @@
   );
 }
 
-/* ── Respect the user ────────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .nuc-in, .nuc-in-fade, .nuc-in-scale,
   .nuc-stagger > *,

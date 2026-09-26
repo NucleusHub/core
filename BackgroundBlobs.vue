@@ -1,20 +1,3 @@
-<!--
-  Shared ambient background — a port of nucleus-web's AmbientBackdrop, so the
-  product and the site read as the same room: a violet-tinted ground, three soft
-  lights (violet / indigo / blue), two vast tilted orbit arcs, two depths of
-  dust, a faint grid, grain and a vignette.
-
-  Fully still, unlike the site — no parallax, no drift. App pages change height
-  constantly (month switches, lists loading), which made scroll-driven travel
-  jump; and anything moving under a large backdrop-filter panel (e.g. Goals'
-  calendar card) forces a full-screen re-blur every frame, which flickers and
-  shows tile seams. The site does the same on /create, the one page with big
-  translucent panels: it pauses the drift there.
-
-  Light theme: the dark nebula would be a stain on paper, so the ground turns to
-  cool paper, the dust / grain / vignette drop out and the lights, orbits and
-  grid stay at a lower pitch.
--->
 <template>
   <div class="bd pointer-events-none fixed overflow-hidden z-0" aria-hidden="true">
     <div class="bd__base" />
@@ -32,14 +15,7 @@
 </template>
 
 <style scoped>
-/* Every layer is painted once and never moves — no animation, no filter:
-   blur(). The lights are soft radial gradients rather than blurred circles. */
-
-/* ── Ground ─────────────────────────────────────────────────────────────────
-   Sized to the *large* viewport, not inset: 0. On mobile the URL bar hides as
-   you scroll, which grows the dynamic viewport — an inset-0 fixed layer (and
-   every vh / % inside it) resizes with it, so the whole backdrop slides while
-   scrolling. lvh stays constant through that. */
+/* Sized to lvh, not inset: 0, so the mobile URL bar resizing the viewport does not slide it. */
 .bd {
   top: 0;
   left: 0;
@@ -63,7 +39,6 @@
     linear-gradient(180deg, #0a0714 0%, #08060f 42%, #050309 100%);
 }
 
-/* ── Lights ─────────────────────────────────────────────────────────────── */
 .bd__light {
   position: absolute;
   border-radius: 50%;
@@ -122,9 +97,6 @@
   );
 }
 
-/* ── Orbits ─────────────────────────────────────────────────────────────────
-   Two hairline ellipses far wider than the viewport, tilted like the shells of
-   the mark; the conic mask keeps each one to an arc passing through the frame. */
 .bd__orbit {
   position: absolute;
   border-radius: 50%;
@@ -170,9 +142,6 @@
   );
 }
 
-/* ── Dust ───────────────────────────────────────────────────────────────────
-   Two depths on co-prime tiles, thinned through the middle column where the
-   content sits. Light-on-dark only — on paper it would read as dirt. */
 .bd__dust {
   display: none;
   position: absolute;
@@ -238,7 +207,6 @@
     radial-gradient(1.6px 1.6px at 211px 346px, rgba(232, 226, 255, 0.28) 0%, transparent 100%);
 }
 
-/* ── Grid ───────────────────────────────────────────────────────────────── */
 .bd__grid {
   position: absolute;
   inset: 0;
@@ -261,7 +229,6 @@
     linear-gradient(to bottom, rgba(255, 255, 255, 0.032) 1px, transparent 1px);
 }
 
-/* ── Grain + vignette (dark only; static — they frame the screen) ───────── */
 .bd__grain,
 .bd__vignette {
   display: none;
@@ -272,8 +239,7 @@
 .dark .bd__vignette { display: block; }
 
 .bd__grain {
-  /* Plain, not overlay: an overlay blend re-composites the whole backdrop
-     whenever anything beneath it changes. Faint, it still breaks banding. */
+  /* Plain, not overlay: overlay re-composites the whole backdrop on any change beneath. */
   opacity: 0.07;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.42'/%3E%3C/svg%3E");
 }
@@ -284,8 +250,6 @@
 
 @media (max-width: 720px) {
   .bd__grid-lines { background-size: 64px 64px; }
-  /* vw-sized orbits arrive as tight circles on a phone — widen the far one
-     past the frame again and drop the near one, which would cross content. */
   .bd__orbit--far { width: 250vw; height: 168vw; }
   .bd__orbit--near { display: none; }
   .bd__dust--near { background-size: 300px 300px; }

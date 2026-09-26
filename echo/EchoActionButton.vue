@@ -3,11 +3,6 @@ import { computed } from 'vue'
 import { useRegistry } from '../useRegistry.js'
 import AppIcon from '../AppIcon.vue'
 
-// A single composer/context action button driven entirely by registry metadata
-// ({ id, label, icon, app }). Emits `invoke` with the action — the host app
-// decides what to do (open Orbit picker, share a goal, etc.). The icon is the
-// contributing app's own icon (matching the sidebar/app icons); it falls back
-// to a small built-in set by name, then a dot.
 const props = defineProps({
   action: { type: Object, required: true },
   compact: { type: Boolean, default: false },

@@ -1,16 +1,9 @@
 import { ref } from 'vue'
 
-// Client accessor for the plugin registry, served by the plugin-runtime service
-// via nginx at /api/plugins. Discovery + metadata only — there is nothing to
-// enable, disable or execute yet, so this is intentionally lighter than
-// useRegistry (no override/cascade logic).
-//
-// Unlike useRegistry (a module-level singleton shared app-wide), this returns a
-// fresh state per call and exposes `load()` so a view can refresh on demand.
 export function usePlugins() {
   const plugins = ref([])
-  const apiVersion = ref(null)   // plugin API version the runtime implements
-  const nucleus = ref(null)      // platform version
+  const apiVersion = ref(null)
+  const nucleus = ref(null)
   const loading = ref(true)
   const error = ref(null)
 

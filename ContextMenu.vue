@@ -3,15 +3,6 @@ import { ref, watch, nextTick, onUnmounted } from 'vue'
 import TrashIcon from './TrashIcon.vue'
 import FavoriteHeart from './FavoriteHeart.vue'
 
-// Shared right-click menu for the whole Nucleus ecosystem. Items are plain
-// objects so any app can drive it without knowing about this component:
-//   { label, icon, action, danger, divider, href, download, iconTrash, iconHeart, iconActive }
-// - divider: renders a separator instead of a row
-// - href (+ optional download): renders an <a> (e.g. a download link)
-// - iconTrash: render the animated open-on-hover trash instead of `icon`
-// - iconHeart: render the favorite heart (fills from centre; `iconActive` = filled)
-// - otherwise: a <button> that runs action() then closes
-// The menu flips to stay on-screen near the click point.
 const props = defineProps({
   show: { type: Boolean, default: false },
   x: { type: Number, default: 0 },
@@ -101,7 +92,6 @@ onUnmounted(() => document.removeEventListener('keydown', onKey))
 </template>
 
 <style scoped>
-/* Grows out from the click point (top-left) with a soft ease-out. */
 .ctx-enter-active .absolute { transition: opacity 0.14s ease, transform 0.16s cubic-bezier(0.22, 1, 0.36, 1); transform-origin: top left; }
 .ctx-leave-active .absolute { transition: opacity 0.1s ease, transform 0.1s ease; transform-origin: top left; }
 .ctx-enter-from .absolute { opacity: 0; transform: scale(0.92) translateY(-4px); }

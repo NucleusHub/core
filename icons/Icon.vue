@@ -1,23 +1,10 @@
 <script setup>
-// Shared icon renderer. Draws one glyph from the registry in icons.js:
-//   <Icon name="close" class="w-5 h-5" />          stroke glyph, sized by class
-//   <Icon name="star" class="w-4 h-4" />           fill glyph (auto from FILL_ICONS)
-//   <Icon name="shield" fill class="w-4 h-4" />    force solid
-//   <Icon name="close" :sw="2.5" />                heavier stroke
-//
-// Colour comes from currentColor, size from the caller's Tailwind classes — same
-// contract as the app's other icons. The glyph markup is injected with v-html so
-// a registry entry can be a <path>, several <path>s, or arbitrary inner SVG
-// (circles, rects, …). See icons.js for the value formats.
 import { computed } from 'vue'
 import { ICONS, FILL_ICONS } from './icons.js'
 
 const props = defineProps({
-  // Registry key from icons.js.
   name: { type: String, required: true },
-  // Stroke width for stroke glyphs (matches the codebase's most common value).
   sw: { type: [Number, String], default: 2 },
-  // Force fill/stroke mode; defaults to the glyph's entry in FILL_ICONS.
   fill: { type: Boolean, default: undefined },
 })
 

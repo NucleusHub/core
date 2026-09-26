@@ -3,11 +3,6 @@ import { computed } from 'vue'
 import { useRegistry } from '../useRegistry.js'
 import AppIcon from '../AppIcon.vue'
 
-// Chrome shared by every app-rendered embed/card. Apps never style their own
-// container — they render content inside this, which gives a consistent glass
-// frame, an app attribution header and optional context actions slot. The
-// header shows the contributing app's own icon (matching the sidebar/app
-// icons), tinted with the accent; falls back to a plain accent dot.
 const props = defineProps({
   app: { type: String, default: null },
   label: { type: String, default: '' },

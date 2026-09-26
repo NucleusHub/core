@@ -21,8 +21,6 @@ const emit = defineEmits(['close'])
 const { t } = useI18n()
 const { login, completeTempLogin, profile: currentProfile } = useAuth()
 const { isPluginEnabled } = useRegistry()
-// Open a plugin launcher (e.g. What's New): close this switcher first so the
-// plugin's modal (mounted in AuthGuard) shows on its own.
 function launch(l) {
   emit('close')
   l.open()
@@ -34,11 +32,9 @@ const pinError = ref(null)
 const pinShake = ref(false)
 const pinInputRef = ref(null)
 
-// Temporary-PIN flow: after a one-time PIN is accepted the user must choose their
-// own before a session is granted. Until they do, nothing is changed server-side.
 const settingNewPin = ref(false)
-const tempPinValue = ref('')        // the one-time PIN they just entered
-const newPinStep = ref('enter')     // 'enter' | 'confirm'
+const tempPinValue = ref('')
+const newPinStep = ref('enter')
 const firstNewPin = ref('')
 const RATE_LIMIT_KEY = 'nucleus_pin_rate_limit_until'
 const rateLimited = ref(false)
@@ -60,16 +56,11 @@ const newName = ref('')
 const newPin = ref('')
 const createError = ref(null)
 
-// When opened with a preselected profile, skip the grid entirely —
-// closing the PIN field closes the whole overlay.
 const pinOnly = ref(false)
 
-// Self-service settings for the signed-in profile (name / color / PIN). Never
-// for guests. Holds the profile object being edited, or null when closed.
 const settingsFor = ref(null)
 
 async function onSettingsUpdated() {
-  // Reflect the edited name/color on the grid card immediately.
   await loadProfiles()
   const p = profiles.value.find(x => x._id === settingsFor.value?._id)
   if (p) settingsFor.value = { ...settingsFor.value, ...p }
@@ -92,8 +83,7 @@ onMounted(async () => {
 
 function onKeydown(e) {
   if (e.key !== 'Escape') return
-  // The settings modal handles its own Escape (TemplateModal); don't also close
-  // the whole selector underneath it.
+  // TemplateModal handles its own Escape; don't also close the selector.
   if (settingsFor.value) return
   if (creating.value) { creating.value = false; return }
   if (settingNewPin.value) { cancelNewPin(); return }
@@ -106,7 +96,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 onBeforeUnmount(() => clearTimeout(rateLimitTimer.value))
 
 async function loadProfiles() {
-  // picker=1: this is the account picker — guests may see the list here.
+  // picker=1 lets guests see the account list.
   const res = await fetch('/api/auth/profiles?picker=1', { credentials: 'include' })
   profiles.value = res.ok ? await res.json() : []
 }
@@ -130,8 +120,6 @@ function resetNewPin() {
   firstNewPin.value = ''
 }
 
-// Leave the set-new-PIN step without changing anything: back to the selector
-// (or close, when launched for a single preselected profile).
 function cancelNewPin() {
   resetNewPin()
   pinError.value = null
@@ -152,7 +140,6 @@ async function doLogin(profileId, pin) {
   try {
     const data = await login(profileId, pin)
     if (data?.pinTemporary) {
-      // One-time PIN accepted — collect a new PIN before granting a session.
       tempPinValue.value = pin
       settingNewPin.value = true
       newPinStep.value = 'enter'
@@ -160,13 +147,11 @@ async function doLogin(profileId, pin) {
       return
     }
     if (props.closeable) window.location.reload()
-    // else AuthGuard handles the transition via profile ref
   } catch (err) {
     handlePinError(err)
   }
 }
 
-// Step through entering and confirming the new PIN, then complete the login.
 async function onNewPin(pin) {
   pinError.value = null
   if (newPinStep.value === 'enter') {
@@ -183,7 +168,6 @@ async function onNewPin(pin) {
   try {
     await completeTempLogin(selected.value._id, tempPinValue.value, pin)
     if (props.closeable) window.location.reload()
-    // else AuthGuard handles the transition via profile ref
   } catch (err) {
     firstNewPin.value = ''
     newPinStep.value = 'enter'
@@ -230,12 +214,9 @@ async function createProfile() {
   <Teleport to="body">
     <div class="fixed inset-0 z-[500] flex flex-col p-4">
 
-      <!-- Main backdrop -->
       <div class="absolute inset-0 bg-black/15 backdrop-blur-2xl"
         @click="closeable && (pinOnly || (!selected && !creating)) ? emit('close') : null" />
 
-      <!-- Corner controls: settings (own profile) + close. In-flow header row so
-           they never overlap the (potentially tall, wrapping) profile grid on phones. -->
       <div v-if="closeable && !selected && !creating" class="relative z-10 shrink-0 flex items-center justify-end gap-2.5">
         <template v-if="currentProfile">
           <button v-for="l in coreLaunchers.filter(l => isPluginEnabled(l.pluginId))" :key="l.pluginId + l.labelKey"
@@ -257,7 +238,6 @@ async function createProfile() {
         </button>
       </div>
 
-      <!-- Profile grid — centered in the space left below the header row, scrolls if tall -->
       <div v-if="!pinOnly" class="relative z-10 flex-1 min-h-0 overflow-y-auto flex flex-col items-center justify-center gap-8 py-4">
         <h1 class="text-2xl font-bold text-white tracking-tight drop-shadow">{{ t('core.profiles.whoAreYou') }}</h1>
         <div v-if="loading" class="text-sm text-white/50">{{ t('core.profiles.loading') }}</div>
@@ -307,7 +287,6 @@ async function createProfile() {
         </div>
       </div>
 
-      <!-- PIN entry modal -->
       <Transition name="fade">
         <div v-if="selected"
           class="absolute inset-0 z-20 flex items-center justify-center p-4"
@@ -320,10 +299,8 @@ async function createProfile() {
             <AvatarCircle :profile="selected" :size="76" />
             <p class="font-semibold text-white">{{ selected.name }}</p>
 
-            <!-- Normal PIN entry -->
             <PinInput v-if="!settingNewPin" ref="pinInputRef" :error="pinError" :shake="pinShake" :disabled="rateLimited" @complete="submitPin" />
 
-            <!-- Set-your-own-PIN step (after a one-time PIN) -->
             <template v-else>
               <p class="text-xs text-white/60 text-center -mt-2">
                 {{ newPinStep === 'enter' ? t('core.profiles.chooseOwnPin') : t('core.profiles.confirmNewPin') }}
@@ -339,7 +316,6 @@ async function createProfile() {
         </div>
       </Transition>
 
-      <!-- Create profile modal -->
       <Transition name="fade">
         <div v-if="creating"
           class="absolute inset-0 z-20 flex items-center justify-center p-4"
@@ -369,7 +345,6 @@ async function createProfile() {
     </div>
   </Teleport>
 
-  <!-- Self-service settings for the signed-in profile (sits above this overlay) -->
   <ProfileSettingsModal
     v-if="settingsFor"
     :profile="settingsFor"

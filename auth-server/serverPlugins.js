@@ -2,22 +2,6 @@ import { readdirSync, readFileSync, existsSync } from 'fs'
 import { fileURLToPath, pathToFileURL } from 'url'
 import { join } from 'path'
 
-// Server-side contributions of installed plugins hosted by the auth-server.
-// Plugins are bind-mounted at /app/plugins (./plugins from here). A plugin is
-// hosted here when its nucleus.plugin.json either targets "core" or declares
-// `extensions.authRoute`; it may then ship:
-//
-//   server/route.js    default export: an express Router, mounted under
-//                      /api/auth at `extensions.authRoute` (e.g. "/i18n"),
-//                      defaulting to /<id>. `authRoute: false` opts out.
-//   server/migrate.js  default export: async () => void, run once per boot
-//                      after the DB connects (idempotent seeding/upgrades).
-//
-// A non-core plugin opts in via authRoute — e.g. in-common, whose cross-app
-// lookup needs the shared identity data this server owns. Nothing is named
-// here, so adding a plugin needs no core change and a missing plugins dir
-// hosts nothing. A plugin that fails to load is logged and skipped — it never
-// takes the auth-server down.
 const PLUGINS_DIR = fileURLToPath(new URL('./plugins', import.meta.url))
 
 function readManifest(dir) {
@@ -36,7 +20,6 @@ function mountPath(manifest) {
   return targets.includes('core') || declared === true ? `/${manifest.id}` : null
 }
 
-// Installed plugins hosted here, sorted by dir name for a stable mount order.
 function hostedPlugins() {
   let names
   try {

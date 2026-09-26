@@ -1,24 +1,8 @@
 import mongoose from 'mongoose'
 import { verifyProfile } from './auth.js'
 
-// Server-side enforcement of the admin registry overrides — the authoritative
-// counterpart to the client's registry gating (core/useRegistry.js). An app
-// server mounts `requireAppEnabled('<its id>')` on its API router; a user for
-// whom the app has been disabled (globally, by a group, or per-user) is then
-// refused with 403 no matter how they reach the endpoint.
-//
-// "Not installed" needs no check here: an app with no manifest has no running
-// server and nginx has no upstream for it. This only enforces the *disabled*
-// state.
-//
-// The disabled set is the SAME union the auth-server's /effective-overrides
-// computes: global (registryoverrides) ∪ the user's groups (groupoverrides) ∪
-// per-user (useroverrides), for kind 'app'. We read those collections directly
-// off the app's own Mongo connection (mongoose here resolves to the importing
-// app's instance), so there's no extra network hop and no model duplication.
-
 const TTL_MS = 10_000
-const cache = new Map() // profileId -> { at: number, ids: Set<string> }
+const cache = new Map()
 
 export async function disabledAppIdsForProfile(profileId) {
   const pid = String(profileId)
@@ -49,10 +33,7 @@ export async function disabledAppIdsForProfile(profileId) {
 
 export function requireAppEnabled(appId) {
   return async (req, res, next) => {
-    // Identify the caller. If unauthenticated, don't 403 here — let the route's
-    // own requireAuth issue the 401. Admins bypass entirely so management
-    // actions (e.g. per-app teardown during user deletion) keep working even
-    // for an app the admin has disabled.
+    // Unauthenticated falls through to requireAuth (401); admins bypass.
     const profile = req.profile || verifyProfile(req)
     if (!profile || profile.role === 'admin') return next()
     try {

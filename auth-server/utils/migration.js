@@ -6,14 +6,12 @@ export async function runMigrations() {
   const db = mongoose.connection.db
   const migrations = db.collection('_migrations')
 
-  // Ensure Guest profile always exists
   const guest = await Profile.findOne({ isGuest: true })
   if (!guest) {
     await Profile.create({ name: 'Guest', role: 'user', isGuest: true, color: '#6b7280', whatsNew: { lastSeenAt: new Date() } })
     console.log('[migration] Guest profile created')
   }
 
-  // Assign legacy data (docs without profileId) to Honzyk
   if (await migrations.findOne({ name: 'assign-legacy-to-honzyk' })) return
 
   const legacyCollections = ['dashboards', 'watchlistitems', 'goals', 'orbitfiles', 'orbitfolders']

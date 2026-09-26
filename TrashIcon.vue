@@ -1,13 +1,5 @@
 <script setup>
-// Shared trash icon whose lid tips open on hover — the ecosystem's delete
-// affordance, so a delete control feels the same in every app (context menus,
-// selection toolbar, item cards, …).
-//
-// It's a *two-part* trash on purpose: the lid (rim + handle) is its own <path>
-// carrying `.nuc-lid`, separate from the can body, so the lid can pivot open.
-// The hover trigger is the enclosing `.nuc-trash` element (usually the button or
-// menu row that holds this icon) — NOT a generic Tailwind `.group`, so hovering
-// a whole card never springs the lid. See core/assets/motion.css.
+// Lid pivots on hover of the enclosing .nuc-trash, not .group, so hovering a card never opens it.
 defineProps({ strokeWidth: { type: [Number, String], default: 1.8 } })
 </script>
 

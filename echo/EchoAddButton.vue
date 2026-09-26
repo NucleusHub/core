@@ -6,16 +6,13 @@ import SpinnerArcIcon from '@core/assets/icons/spinner-arc.svg?component'
 
 const { t } = useI18n()
 
-// Small "Add to my <app>" button for embed cards. Runs the supplied async
-// handler (which calls the owning app's API) and reflects idle → loading →
-// done / error state. The DB write itself lives in the respective app.
 const props = defineProps({
   handler: { type: Function, required: true },
   label: { type: String, default: '' },
   doneLabel: { type: String, default: '' },
 })
 
-const state = ref('idle') // idle | loading | done | error
+const state = ref('idle')
 
 async function click() {
   if (state.value === 'loading' || state.value === 'done') return

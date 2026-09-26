@@ -75,9 +75,7 @@ defineExpose({ clear })
         :disabled="disabled"
         class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-white transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
         :title="visible ? 'Hide PIN' : 'Show PIN'">
-        <!-- eye -->
         <EyeIcon v-if="!visible" width="18" height="18" />
-        <!-- eye-off -->
         <EyeOffIcon v-else width="18" height="18" />
       </button>
     </div>

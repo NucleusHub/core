@@ -1,15 +1,9 @@
 <script setup>
-// Renders a module/platform version as `v0.9.0-beta.2` plus an optional,
-// auto-derived release-channel pill (Alpha / Beta / RC). Stable releases show
-// no pill by default — they're the expected case, so the bare version reads
-// cleanest. Shared across admin + pulse (both build with Tailwind, class-based
-// dark mode) via `@core/VersionBadge.vue`.
 import { computed } from 'vue'
 import { formatVersion, channelOf, channelLabel } from './version.js'
 
 const props = defineProps({
   version: { type: String, default: '' },
-  // Show a pill for stable too (off by default to avoid clutter).
   showStable: { type: Boolean, default: false },
 })
 
@@ -20,7 +14,7 @@ const showPill = computed(() =>
   !!channel.value && (channel.value !== 'stable' || props.showStable),
 )
 
-// Per-channel tint. Kept as whole class strings so Tailwind's JIT sees them.
+// Full class strings so Tailwind's JIT detects them.
 const PILL = {
   stable: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
   rc:     'bg-sky-500/15 text-sky-600 dark:text-sky-400',

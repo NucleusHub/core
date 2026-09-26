@@ -3,18 +3,11 @@ import { computed } from 'vue'
 import { avatarUrl } from './useAuth.js'
 import ShieldIcon from '@core/assets/icons/shield.svg?component'
 
-// The one avatar component. Prefer passing a whole `profile` object — the
-// name/colour/emoji/uploaded-photo/admin badge are all derived from it, so
-// call sites never repeat that wiring or build the avatar URL themselves. The
-// individual props remain for the cases that have no profile object (a group
-// avatar, a live-edit preview, a "new user" form) and override the profile.
 const props = defineProps({
   profile: { type: Object, default: null },
   name:  { type: String, default: '' },
   color: { type: String, default: '' },
   emoji: { type: String, default: null },
-  // Explicit uploaded-avatar src URL. Usually left unset — it's resolved from
-  // `profile` automatically.
   image: { type: String, default: null },
   size:  { type: Number, default: 72 },
   admin: { type: Boolean, default: false },

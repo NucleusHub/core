@@ -1,8 +1,3 @@
-// Split a string into plain-text and link segments on http(s) URLs, so message
-// text can render detected URLs as real (new-tab) links without dumping raw HTML
-// into the DOM. Returns an array of { text, href? } — segments with `href` are
-// links, the rest are plain text. Trailing sentence punctuation is kept out of
-// the link so "see https://x.com." doesn't swallow the period.
 const URL_RE = /(https?:\/\/[^\s<]+)/g
 const TRAILING = /[.,!?;:'")\]}]+$/
 

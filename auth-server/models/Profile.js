@@ -16,32 +16,16 @@ const profileSchema = new mongoose.Schema({
   name:        { type: String, required: true, trim: true },
   role:        { type: String, enum: ['admin', 'user'], default: 'user' },
   pin:         { type: String, default: null },
-  // When true, `pin` is a one-time PIN: the user is forced to choose their own
-  // PIN on first login, after which this clears. See auth-server/routes/index.js.
   pinTemporary: { type: Boolean, default: false },
-  // Plaintext of the active one-time PIN, kept only so an admin can read it back
-  // and relay it to the user. Cleared the moment the user sets their own PIN.
-  // Never exposed by public/self endpoints — admin-only.
+  // Admin-only readback of the active one-time PIN; never expose via public/self endpoints.
   pinTempPlain: { type: String, default: null },
   emoji:       { type: String, default: null },
-  // Optional uploaded avatar, stored as a small square data URL
-  // (data:image/…;base64,…). Resized client-side before upload. When set it
-  // takes precedence over the emoji/initials avatar. Served as raw bytes via
-  // GET /profiles/:id/avatar; never returned inline in list/self responses.
   image:       { type: String, default: null },
   imageUpdatedAt: { type: Date, default: null },
   color:       { type: String, required: true },
   lastLoginAt: { type: Date, default: null },
   isGuest:     { type: Boolean, default: false },
-  // Admin-assigned UI language (BCP-47 tag, e.g. 'cs-CZ'). null = fall back to
-  // the instance default language. Honored only when the localization plugin is
-  // installed; see plugins/localization/server/route.js.
   locale:      { type: String, default: null },
-  // Per-user state for the "What's New" changelog modal. `lastSeenAt` is when the
-  // user last dismissed it — the modal auto-opens when an announcement was
-  // published more recently. New profiles are seeded to "now" so they start
-  // caught up (no modal on first login). `optOut` permanently silences it.
-  // See plugins/whats-new/server/route.js and plugins/whats-new/client/WhatsNewModal.vue.
   whatsNew: {
     lastSeenAt: { type: Date, default: null },
     optOut:     { type: Boolean, default: false },

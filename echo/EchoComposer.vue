@@ -6,15 +6,7 @@ import { Icon } from '../icons'
 
 const { t } = useI18n()
 
-// The message input. Its attachment options are built purely from registry-
-// supplied composer actions — Echo core knows nothing about Orbit or Prism; it
-// just lists what each app contributed and emits `action` when one is chosen.
-// The host handles the action (opens a picker) and then calls send() with an
-// app-typed message. Everything sits in one rounded bar: a single "+" reveals
-// the attachment sources so the input stays uncluttered no matter how many apps
-// are installed.
 const props = defineProps({
-  // composer actions from the unified registry: [{ id, label, icon, app }]
   actions: { type: Array, default: () => [] },
   disabled: { type: Boolean, default: false },
   placeholder: { type: String, default: '' },
@@ -25,8 +17,6 @@ const text = ref('')
 const textarea = ref(null)
 const menuOpen = ref(false)
 
-// Grow the field with its content up to a cap, then it scrolls — so a long
-// message is fully visible while a short one stays a single tidy line.
 function autosize() {
   const el = textarea.value
   if (!el) return
@@ -44,8 +34,6 @@ function submit() {
   if (!value || props.disabled) return
   emit('send', { type: 'text', payload: { text: value } })
   text.value = ''
-  // Keep focus in the field after sending so you can keep typing (Enter keeps it
-  // anyway; the send button would otherwise steal it), and reset the height.
   nextTick(() => { autosize(); textarea.value?.focus() })
 }
 
@@ -60,7 +48,6 @@ function pick(action) {
     <div
       class="relative flex items-end gap-1.5 rounded-[1.4rem] border border-slate-200/80 bg-white/70 py-1.5 pl-1.5 pr-1.5 shadow-sm backdrop-blur-md transition-colors focus-within:border-indigo-300 dark:border-white/10 dark:bg-white/[0.06] dark:focus-within:border-indigo-400/40"
     >
-      <!-- Attachment sources (only when an app contributed one). -->
       <template v-if="actions.length">
         <button
           type="button"
@@ -73,7 +60,6 @@ function pick(action) {
           <Icon width="20" height="20" name="plus" class="transition-transform duration-200" :class="menuOpen ? 'rotate-45' : ''" />
         </button>
 
-        <!-- Popover: one row per source. Closes on pick or outside click. -->
         <div v-if="menuOpen" class="fixed inset-0 z-40" @click="menuOpen = false" />
         <div
           v-if="menuOpen"

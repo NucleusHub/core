@@ -21,8 +21,6 @@ const NAV_ITEMS = computed(() =>
     .map(a => ({ label: a.name, to: a.route + '/', description: a.description, iconSvg: a.iconSvg }))
 )
 
-// The Admin Console link needs both an admin-role user AND the admin app to be
-// installed/enabled — otherwise it points at a dead /admin/ route.
 const showAdminLink = computed(() => profile.value?.role === 'admin' && hasApp('admin'))
 
 const props = defineProps({ open: { type: Boolean, default: false } })
@@ -68,7 +66,6 @@ function launch(l) {
       class="fixed inset-0 z-50 flex"
       :class="open ? 'pointer-events-auto' : 'pointer-events-none'"
     >
-      <!-- Sidebar panel -->
       <div
         class="w-60 backdrop-blur-xl bg-white/80 dark:bg-slate-900/85 border-r border-white/50 dark:border-white/10 flex flex-col shadow-2xl shadow-indigo-500/10 dark:shadow-black/40 shrink-0 transition-transform duration-[220ms] ease-[cubic-bezier(0.4,0,0.2,1)]"
         :class="open ? 'translate-x-0' : '-translate-x-full'"
@@ -112,7 +109,6 @@ function launch(l) {
           </a>
         </nav>
 
-        <!-- Account / switch -->
         <div v-if="profile" class="px-3 pt-3 pb-1 border-t border-white/40 dark:border-white/8">
           <button @click="openSwitch"
             class="nuc-press cursor-pointer w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-white/8 transition-colors">
@@ -125,7 +121,6 @@ function launch(l) {
           </button>
         </div>
 
-        <!-- Plugin launchers (e.g. What's New) — see core/usePluginExtensions.js. -->
         <template v-if="profile">
           <div v-for="l in coreLaunchers.filter(l => isPluginEnabled(l.pluginId))" :key="l.pluginId + l.labelKey" class="sidebar-footer">
             <button class="admin-btn" :class="{ 'theme-light': !isDark }" @click="launch(l)">
@@ -142,7 +137,6 @@ function launch(l) {
           </a>
         </div>
 
-        <!-- Theme switcher -->
         <div class="px-3 py-3 border-t border-white/40 dark:border-white/8">
           <div class="flex bg-black/5 dark:bg-white/8 rounded-lg p-0.5 gap-0.5">
             <button
@@ -163,7 +157,6 @@ function launch(l) {
         </div>
       </div>
 
-      <!-- Backdrop -->
       <div
         class="flex-1 bg-black/50 backdrop-blur-sm cursor-pointer transition-opacity duration-[220ms]"
         :class="open ? 'opacity-100' : 'opacity-0'"
@@ -176,7 +169,6 @@ function launch(l) {
 </template>
 
 <style scoped>
-/* Nav links slide + fade in, one after another, each time the panel opens. */
 .sb-link { transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.15s, color 0.15s; }
 .sb-link:hover { transform: translateX(3px); }
 
@@ -216,7 +208,6 @@ function launch(l) {
 
   margin: 10px auto;
 
-  /* Dark (default) */
   color: rgba(255, 255, 255, 0.75);
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -228,7 +219,6 @@ function launch(l) {
   color: #fff;
 }
 
-/* Light mode (theme-light class set from useTheme) */
 .admin-btn.theme-light {
   color: rgba(30, 41, 59, 0.8);
   background: rgba(15, 23, 42, 0.05);

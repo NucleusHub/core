@@ -2,17 +2,13 @@
 import { computed, inject } from 'vue'
 import { linkify } from '../linkify.js'
 
-// Built-in renderer for plain text messages. payload = { text }. URLs in the
-// text are auto-detected and rendered as new-tab links.
 const props = defineProps({
   payload: { type: Object, required: true },
 })
 
 const parts = computed(() => linkify(props.payload.text))
 
-// On the indigo "mine" bubble (white text), sky links are invisible — use a
-// light blue that contrasts. Light mode uses a custom blue; dark keeps sky-200.
-// Off the accent, use the theme-aware sky pair.
+// Sky links are unreadable on the indigo "mine" bubble; use a contrasting blue.
 const onAccent = inject('echoOnAccent', null)
 const linkClass = computed(() =>
   onAccent?.value
@@ -35,7 +31,6 @@ const linkClass = computed(() =>
 </template>
 
 <style scoped>
-/* Links on the indigo "mine" bubble. Light: custom blue; dark: sky-200. */
 .echo-accent-link { color: rgb(122, 198, 242); }
 :where(.dark) .echo-accent-link { color: #bae6fd; }
 </style>
