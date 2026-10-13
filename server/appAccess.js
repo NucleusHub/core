@@ -31,11 +31,30 @@ export async function disabledAppIdsForProfile(profileId) {
   return ids
 }
 
+// Mount before requireAppEnabled on a route to let other apps' tokens in with exactly this cross-app scope.
+export function allowCrossApp(scope) {
+  return (req, _res, next) => {
+    req.crossAppScope = scope
+    next()
+  }
+}
+
+// An app token reaches only its own app with `data`, or a route marked by allowCrossApp; never fail-open.
+function tokenAllowed(profile, appId, crossAppScope) {
+  if (profile.clientId === appId && profile.scopes.includes('data')) return true
+  return !!crossAppScope && profile.scopes.includes(crossAppScope)
+}
+
 export function requireAppEnabled(appId) {
   return async (req, res, next) => {
     // Unauthenticated falls through to requireAuth (401); admins bypass.
     const profile = req.profile || await verifyProfile(req)
     if (!profile) return next()
+    if (profile.via === 'oauth' && !tokenAllowed(profile, appId, req.crossAppScope)) {
+      const scope = req.crossAppScope || 'data'
+      res.set('WWW-Authenticate', `Bearer realm="nucleus", error="insufficient_scope", scope="${scope}"`)
+      return res.status(403).json({ error: { code: 'forbidden', message: `This app's data needs the "${scope}" scope.` } })
+    }
     try {
       if (await profileRole(profile.profileId) === 'admin') return next()
       const disabled = await disabledAppIdsForProfile(profile.profileId)

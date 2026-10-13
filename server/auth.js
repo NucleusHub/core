@@ -61,7 +61,7 @@ async function verifyAccessToken(token) {
   const id = createHash('sha256').update(token, 'utf8').digest('hex')
   const now = Date.now()
   const hit = tokenCache.get(id)
-  if (hit && now < hit.until) return hit.profile
+  if (hit && now < hit.until) return copy(hit.profile)
   const db = mongoose.connection.db
   const row = await db.collection('oauth_tokens').findOne({ _id: id, kind: 'access', expiresAt: { $gt: new Date(now) } })
   if (!row) return null
@@ -78,13 +78,17 @@ async function verifyAccessToken(token) {
   // Negatives aren't cached; positives never outlive the token itself.
   if (tokenCache.size > 10_000) tokenCache.clear()
   tokenCache.set(id, { until: Math.min(now + SESSION_CACHE_MS, row.expiresAt.getTime()), profile: result })
-  return result
+  return copy(result)
 }
 
-// The Authorization bearer value ('' when the scheme has no token), or null without a bearer header.
+// Routes may mutate req.profile; the cached object must stay pristine.
+const copy = (profile) => ({ ...profile, scopes: [...profile.scopes] })
+
+// The bearer token, '' for a malformed Bearer header (refused, never falls back to the cookie), null without one.
 function bearerToken(req) {
-  const [scheme, token] = (req.headers?.authorization ?? '').split(' ')
-  return scheme?.toLowerCase() === 'bearer' ? token ?? '' : null
+  const header = req.headers?.authorization
+  if (typeof header !== 'string' || !/^bearer(\s|$)/i.test(header)) return null
+  return header.match(/^Bearer[ ]+(\S+)[ ]*$/i)?.[1] ?? ''
 }
 
 // Admin checks read the role here, not from the JWT, so a demotion applies within the cache window.
@@ -102,6 +106,15 @@ export async function profileRole(profileId) {
   return role
 }
 
+// The JWT role can be stale; a DB failure fails closed to 'user'.
+async function withDbRole(claims) {
+  let role = null
+  try {
+    role = await profileRole(claims.profileId)
+  } catch {}
+  return { ...claims, role: role ?? 'user' }
+}
+
 // A bearer header wins over the cookie: an app that sends one means it.
 export async function verifyProfile(req) {
   const bearer = bearerToken(req)
@@ -115,7 +128,7 @@ export async function verifyProfile(req) {
   const token = req.cookies?.nucleus_token
   if (!token) return null
   try {
-    return await verifyToken(token)
+    return await withDbRole(await verifyToken(token))
   } catch {
     return null
   }
@@ -143,7 +156,7 @@ export async function requireAuth(req, res, next) {
     return res.status(401).json({ error: 'Unauthenticated' })
   }
   try {
-    req.profile = await verifyToken(token)
+    req.profile = await withDbRole(await verifyToken(token))
   } catch {
     return res.status(401).json({ error: 'Invalid or expired token' })
   }

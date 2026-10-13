@@ -20,9 +20,8 @@ mkdirSync(path.join(here, 'tmp'), { recursive: true })
 const copyDir = mkdtempSync(path.join(here, 'tmp', 'core-server-'))
 cpSync(path.join(here, '..', '..', 'server'), copyDir, { recursive: true })
 const { requireAuth, requireScope, verifyProfile } = await import(path.join(copyDir, 'auth.js'))
-const { requireAppEnabled } = await import(path.join(copyDir, 'appAccess.js'))
+const { requireAppEnabled, allowCrossApp } = await import(path.join(copyDir, 'appAccess.js'))
 
-const REDIRECT = 'com.nucleushome.todo:/oauth'
 let app
 
 before(async () => {
@@ -30,7 +29,12 @@ before(async () => {
   await seedClients()
   app = express()
   app.use(cookieParser())
-  app.get('/me', requireAppEnabled('watchlist'), requireAuth, (req, res) => res.json(req.profile))
+  app.get('/me', requireAppEnabled('watchlist'), requireAuth, (req, res) => {
+    const body = structuredClone(req.profile)
+    req.profile.scopes?.push('tampered')
+    res.json(body)
+  })
+  app.get('/library', allowCrossApp('read:watchlist/library'), requireAppEnabled('watchlist'), requireAuth, (req, res) => res.json({ ok: true }))
   app.get('/data', requireAuth, requireScope('data'), (req, res) => res.json({ ok: true }))
   app.get('/peek', async (req, res) => res.json(await verifyProfile(req)))
 })
@@ -48,11 +52,12 @@ async function account(attrs = {}) {
 }
 
 // Mints through auth-server's own lib, so the hashing must match core/server's.
-async function mint(profile, scopes = ['profile', 'data']) {
+async function mint(profile, scopes = ['profile', 'data'], clientId = 'watchlist') {
+  const REDIRECT = `com.nucleushome.${clientId}:/oauth`
   const verifier = randomBytes(32).toString('base64url')
   const codeChallenge = createHash('sha256').update(verifier).digest('base64url')
-  const code = await approve({ clientId: 'todo', profileId: profile._id, scopes, redirectUri: REDIRECT, codeChallenge })
-  const pair = await redeemCode({ code, clientId: 'todo', redirectUri: REDIRECT, verifier })
+  const code = await approve({ clientId, profileId: profile._id, scopes, redirectUri: REDIRECT, codeChallenge })
+  const pair = await redeemCode({ code, clientId, redirectUri: REDIRECT, verifier })
   assert.equal(typeof pair, 'object', String(pair))
   return pair
 }
@@ -87,8 +92,9 @@ test('a live access token authenticates with role from the database', async () =
   const res = await bearer(accessToken)
   assert.equal(res.status, 200, JSON.stringify(res.body))
   assert.deepEqual(res.body, {
-    profileId: String(profile._id), name: 'Petr', role: 'admin', via: 'oauth', clientId: 'todo', scopes: ['profile', 'data'],
+    profileId: String(profile._id), name: 'Petr', role: 'admin', via: 'oauth', clientId: 'watchlist', scopes: ['profile', 'data'],
   })
+  assert.deepEqual((await bearer(accessToken)).body.scopes, ['profile', 'data'], 'cached profile was mutated')
   assert.equal((await request(app).get('/peek').set('Authorization', `Bearer ${accessToken}`)).body.via, 'oauth')
 })
 
@@ -105,6 +111,11 @@ test('refresh tokens, other prefixes and unknown tokens are refused', async () =
   assertInvalid(await bearer(accessToken.replace('nat_', 'xyz_')))
   assertInvalid(await bearer(`nat_${randomBytes(32).toString('base64url')}`))
   assertInvalid(await bearer(''))
+  for (const header of [`Bearer ${accessToken} extra`, `Bearer\t${accessToken}`, 'Bearer']) {
+    assertInvalid(await request(app).get('/me').set('Authorization', header).set('Cookie', await loginAsNid(profile)))
+  }
+  assert.equal((await request(app).get('/me').set('Authorization', `bearer   ${accessToken}  `)).status, 200)
+  assert.equal((await request(app).get('/me').set('Authorization', 'Basic eDp5').set('Cookie', await loginAsNid(profile))).status, 200)
 })
 
 test('an expired access token is refused', async () => {
@@ -124,11 +135,11 @@ test('a deleted grant, revoked client or deleted account refuses the token', asy
   assertInvalid(await bearer(b.accessToken))
 
   const c = await mint(await account())
-  await OAuthClient.updateOne({ _id: 'todo' }, { revokedAt: new Date() })
+  await OAuthClient.updateOne({ _id: 'watchlist' }, { revokedAt: new Date() })
   try {
     assertInvalid(await bearer(c.accessToken))
   } finally {
-    await OAuthClient.updateOne({ _id: 'todo' }, { revokedAt: null })
+    await OAuthClient.updateOne({ _id: 'watchlist' }, { revokedAt: null })
   }
 })
 
@@ -171,5 +182,36 @@ test('app access reads the admin role from the database, not the JWT', async () 
 
   const viaToken = await account()
   await disable(viaToken)
-  assert.equal((await bearer((await mint(viaToken)).accessToken)).status, 403)
+  assert.equal((await bearer((await mint(viaToken)).accessToken)).body.code, 'APP_DISABLED')
+})
+
+test('cookie sessions carry the role from the database', async () => {
+  const demoted = await account({ role: 'admin' })
+  const cookie = await loginAsNid(demoted)
+  await Profile.updateOne({ _id: demoted._id }, { role: 'user' })
+  assert.equal((await request(app).get('/me').set('Cookie', cookie)).body.role, 'user')
+  assert.equal((await request(app).get('/peek').set('Cookie', cookie)).body.role, 'user')
+})
+
+function assertForbidden(res, scope) {
+  assert.equal(res.status, 403)
+  assert.equal(res.headers['www-authenticate'], `Bearer realm="nucleus", error="insufficient_scope", scope="${scope}"`)
+  assert.equal(res.body.error.code, 'forbidden')
+}
+
+test('app tokens reach only their own app with the data scope', async () => {
+  const profile = await account({ role: 'admin' })
+  assertForbidden(await bearer((await mint(profile, ['profile', 'data'], 'todo')).accessToken), 'data')
+  assertForbidden(await bearer((await mint(profile, ['profile'])).accessToken), 'data')
+  assert.equal((await bearer((await mint(profile)).accessToken)).status, 200)
+})
+
+test('a route can let another app in with an exact cross-app scope', async () => {
+  const profile = await account()
+  const cross = await mint(profile, ['profile', 'read:watchlist/library'], 'todo')
+  assert.equal((await bearer(cross.accessToken, '/library')).status, 200)
+  assertForbidden(await bearer(cross.accessToken), 'data')
+  const plain = await mint(profile, ['profile', 'data'], 'todo')
+  assertForbidden(await bearer(plain.accessToken, '/library'), 'read:watchlist/library')
+  assert.equal((await request(app).get('/library').set('Cookie', await loginAsNid(profile))).status, 200)
 })
