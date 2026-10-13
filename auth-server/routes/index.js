@@ -12,6 +12,7 @@ import Group from '../models/Group.js'
 import GroupOverride from '../models/GroupOverride.js'
 import { requireAuth, requireAdmin, authenticate } from '../middleware/auth.js'
 import { issueSession, revokeSession } from '../lib/session.js'
+import { serverCodeGate } from '../middleware/serverCode.js'
 import { resolveViewer, filterProfiles } from '../visibility.js'
 import { mountPluginRoutes } from '../serverPlugins.js'
 
@@ -69,7 +70,7 @@ function randomPin() {
   return s
 }
 
-router.get('/profiles', async (req, res) => {
+router.get('/profiles', serverCodeGate, async (req, res) => {
   try {
     const all = await Profile.find().lean()
     const guests = all.filter(p => p.isGuest)
@@ -207,7 +208,7 @@ router.patch('/profiles/:id', requireAuth, async (req, res) => {
 })
 
 // Public so the picker can render it pre-login; cache-busted via ?v=, so immutable.
-router.get('/profiles/:id/avatar', async (req, res) => {
+router.get('/profiles/:id/avatar', serverCodeGate, async (req, res) => {
   try {
     if (!isValidId(req.params.id)) return res.status(400).json({ error: 'Invalid profile ID' })
     const profile = await Profile.findById(req.params.id).select('image').lean()
@@ -339,7 +340,7 @@ router.delete('/profiles/:id', requireAdmin, async (req, res) => {
   }
 })
 
-router.post('/login', async (req, res) => {
+router.post('/login', serverCodeGate, async (req, res) => {
   const ip = req.ip || req.socket?.remoteAddress || 'unknown'
   if (!checkLoginRate(ip)) {
     return res.status(429).json({ error: 'Too many attempts. Try again in 15 minutes.' })
@@ -388,7 +389,7 @@ router.post('/login', async (req, res) => {
   }
 })
 
-router.post('/login/set-pin', async (req, res) => {
+router.post('/login/set-pin', serverCodeGate, async (req, res) => {
   const ip = req.ip || req.socket?.remoteAddress || 'unknown'
   if (!checkLoginRate(ip)) {
     return res.status(429).json({ error: 'Too many attempts. Try again in 15 minutes.' })

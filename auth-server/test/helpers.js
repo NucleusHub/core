@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import { MongoMemoryServer } from 'mongodb-memory-server'
 import { createApp } from '../app.js'
 import { loadJwtSecret } from '../lib/secret.js'
+import { issueSession } from '../lib/session.js'
 import Profile, { colorFromName } from '../models/Profile.js'
 
 let mongod = null
@@ -37,4 +38,13 @@ export async function createProfile(attrs = {}) {
 
 export function loginAs(agent, profile, pin) {
   return agent.post('/api/auth/login').send({ profileId: String(profile._id), pin })
+}
+
+// No NID login route yet: mint a via='nid' session directly, returned as a Cookie header.
+export async function loginAsNid(profile) {
+  let token
+  const req = { get: () => undefined, ip: null, secure: false }
+  const res = { cookie: (_name, value) => { token = value } }
+  await issueSession(req, res, profile, 'nid')
+  return `nucleus_token=${token}`
 }
