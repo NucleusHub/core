@@ -58,6 +58,13 @@ test('a cross-origin page cannot mint a code with the session', async () => {
   assert.equal(await OAuthCode.countDocuments(), 0)
 })
 
+test('an opaque origin (sandboxed frame, file://) cannot write', async () => {
+  const res = await authorize({ Origin: 'null' })
+  assert.equal(res.status, 403)
+  assert.equal(res.body.error.code, 'cross_origin')
+  assert.equal(await OAuthCode.countDocuments(), 0)
+})
+
 test('same-origin writes pass, with or without a known scheme', async () => {
   assert.equal((await authorize({ Origin: 'http://nas.local' })).status, 200)
   // nginx doesn't always say which scheme the browser used; host and port still have to match.
