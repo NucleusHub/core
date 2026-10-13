@@ -1,5 +1,5 @@
 import mongoose from 'mongoose'
-import { verifyProfile } from './auth.js'
+import { profileRole, verifyProfile } from './auth.js'
 
 const TTL_MS = 10_000
 const cache = new Map()
@@ -35,8 +35,9 @@ export function requireAppEnabled(appId) {
   return async (req, res, next) => {
     // Unauthenticated falls through to requireAuth (401); admins bypass.
     const profile = req.profile || await verifyProfile(req)
-    if (!profile || profile.role === 'admin') return next()
+    if (!profile) return next()
     try {
+      if (await profileRole(profile.profileId) === 'admin') return next()
       const disabled = await disabledAppIdsForProfile(profile.profileId)
       if (disabled.has(appId)) {
         return res.status(403).json({ error: 'This app is disabled for your account', code: 'APP_DISABLED', app: appId })
