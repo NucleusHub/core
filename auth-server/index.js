@@ -4,6 +4,7 @@ import { loadJwtSecret } from './lib/secret.js'
 import { runMigrations } from './utils/migration.js'
 import { runPluginMigrations } from './serverPlugins.js'
 import Profile from './models/Profile.js'
+import { seedClients } from './lib/oauth.js'
 
 const PORT = process.env.PORT || 3005
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/nucleus'
@@ -17,6 +18,7 @@ mongoose
     await runPluginMigrations()
     // Unique account indexes must exist before the first sign-up.
     await Profile.init()
+    await seedClients()
     createApp().listen(PORT, () => console.log(`Auth server on :${PORT}`))
   })
   .catch(err => { console.error('MongoDB connection failed:', err); process.exit(1) })

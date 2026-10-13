@@ -9,6 +9,7 @@ import { revokeEmailTokens } from '../models/EmailToken.js'
 import { mailEnabled, sendTest } from '../lib/mailer.js'
 import { randomBytes } from 'node:crypto'
 import mongoose from 'mongoose'
+import { clientView, listClients, setTrusted } from '../lib/oauth.js'
 
 const router = Router()
 
@@ -239,6 +240,25 @@ router.post('/accounts/:id/reset-password', requireNidAdmin, async (req, res) =>
     await revokeEmailTokens(profile._id, 'reset')
     await revokeAllSessions(profile._id)
     res.json({ temporaryPassword })
+  } catch {
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+router.get('/clients', requireNidAdmin, async (_req, res) => {
+  try {
+    res.set('Cache-Control', 'no-store').json(await listClients())
+  } catch {
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+router.patch('/clients/:id', requireNidAdmin, async (req, res) => {
+  if (typeof req.body?.trusted !== 'boolean') return res.status(400).json({ error: 'trusted must be true or false' })
+  try {
+    const client = await setTrusted(String(req.params.id), req.body.trusted)
+    if (!client) return res.status(404).json({ error: 'Not found' })
+    res.json(clientView(client))
   } catch {
     res.status(500).json({ error: 'Server error' })
   }

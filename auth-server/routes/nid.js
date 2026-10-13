@@ -13,6 +13,7 @@ import { cookiePassed, grantServerAccess } from '../lib/serverCode.js'
 import { checkPasswordStrength, hashPassword, needsRehash, verifyPassword } from '../lib/password.js'
 import { mailEnabled, sendPasswordReset, sendVerification } from '../lib/mailer.js'
 import { rateLimiter } from '../lib/rateLimit.js'
+import { listGrantsForProfile, revokeAllForProfile, revokeGrant } from '../lib/oauth.js'
 
 const HANDLE = /^[a-z0-9][a-z0-9-]{1,38}$/
 // No list or comment syntax around the @: a mail library would read those as several addresses.
@@ -373,6 +374,7 @@ export function nidRouter() {
 
   router.post('/logout-all', requireAuth, handle(async (req, res) => {
     await revokeAllSessions(req.profile.profileId)
+    await revokeAllForProfile(req.profile.profileId)
     res.clearCookie('nucleus_token', { path: '/' })
     res.status(204).end()
   }))
@@ -473,7 +475,19 @@ export function nidRouter() {
     await revokeEmailTokens(profile._id)
     await Profile.deleteOne({ _id: profile._id })
     await revokeAllSessions(profile._id)
+    await revokeAllForProfile(profile._id)
     res.clearCookie('nucleus_token', { path: '/' })
+    res.status(204).end()
+  }))
+
+  router.get('/apps', requireAuth, handle(async (req, res) => {
+    res.set('Cache-Control', 'no-store').json({ apps: await listGrantsForProfile(req.profile.profileId) })
+  }))
+
+  // Signs the app out on every device; what it stored stays for when they sign back in.
+  router.delete('/apps/:clientId', requireAuth, handle(async (req, res) => {
+    if (!(await revokeGrant(String(req.params.clientId), req.profile.profileId)))
+      return fail(res, 404, 'not_connected', 'That app is not connected to this account.')
     res.status(204).end()
   }))
 

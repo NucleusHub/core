@@ -12,6 +12,7 @@ import Group from '../models/Group.js'
 import GroupOverride from '../models/GroupOverride.js'
 import { requireAuth, requireNidAdmin, authenticate } from '../middleware/auth.js'
 import { issueSession, revokeAllSessions, revokeSession } from '../lib/session.js'
+import { revokeAllForProfile } from '../lib/oauth.js'
 import { verifyPassword } from '../lib/password.js'
 import { getSettings } from '../models/AuthSettings.js'
 import { revokeEmailTokens } from '../models/EmailToken.js'
@@ -367,6 +368,7 @@ router.delete('/profiles/:id', requireNidAdmin, async (req, res) => {
     await UserOverride.deleteMany({ profileId: id })
     await r.target.deleteOne()
     await revokeAllSessions(r.target._id)
+    await revokeAllForProfile(r.target._id)
     await revokeEmailTokens(r.target._id)
     res.json({ ok: true })
   } catch {

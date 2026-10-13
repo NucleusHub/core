@@ -10,6 +10,7 @@ import ServerKeyGate from './ServerKeyGate.vue'
 import NidLinkDialog from './NidLinkDialog.vue'
 import AccountModal from './AccountModal.vue'
 import NidUpgradeDialog from './NidUpgradeDialog.vue'
+import AuthorizePage from './AuthorizePage.vue'
 import { coreMounts } from '../usePluginExtensions.js'
 import MadeByAttribution from '../MadeByAttribution.vue'
 import EasterEggs from '../EasterEggs.vue'
@@ -34,6 +35,8 @@ const overlayHostLoader = Object.values(import.meta.glob('@widgets-core/componen
 const WidgetOverlayHost = overlayHostLoader ? defineAsyncComponent(overlayHostLoader) : null
 
 const basePath = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '') || '/'
+// The OAuth consent page signs people in itself, so it stands in for both the picker and the app.
+const authorizePath = basePath === '/' && window.location.pathname.replace(/\/+$/, '') === '/authorize'
 const currentApp = computed(() =>
   basePath === '/' ? null : allApps.value.find(a => (a.route || '').replace(/\/+$/, '') === basePath) || null,
 )
@@ -146,6 +149,7 @@ onUnmounted(() => clearTimeout(toastTimer))
   <EasterEggs />
 
   <template v-if="!checked"></template>
+  <AuthorizePage v-else-if="authorizePath" :notice="ssoNotice" />
   <template v-else-if="isAuthenticated">
     <div v-if="appBlocked" class="nucleus-app-blocked">
       <div class="nucleus-app-blocked__card">

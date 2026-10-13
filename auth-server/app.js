@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser'
 import router from './routes/index.js'
 import settingsRouter from './routes/settings.js'
 import { serverCodeRouter } from './routes/v1/serverCode.js'
+import { oauthRouter } from './routes/v1/oauth.js'
 import { nidRouter } from './routes/nid.js'
 import { ssoRouter } from './routes/sso.js'
 
@@ -17,6 +18,7 @@ export function createApp() {
   app.use(cookieParser())
   app.get('/api/auth/health', (_, res) => res.json({ ok: true }))
   app.use('/api/v1/auth/server-code', serverCodeRouter())
+  app.use('/api/v1/oauth', oauthRouter())
   app.use('/api/auth/settings', settingsRouter)
   app.use('/api/auth/nid/sso', ssoRouter())
   app.use('/api/auth/nid', nidRouter())

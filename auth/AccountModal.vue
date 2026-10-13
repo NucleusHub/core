@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import NidDialog from './NidDialog.vue'
 import NidField from './NidField.vue'
 import NidProviderIcon from './NidProviderIcon.vue'
@@ -237,6 +237,49 @@ async function disconnect(id) {
   }
 }
 
+// Apps tab
+const apps = ref(null)
+const appsError = ref(null)
+const appsBusy = ref(null)
+const appsDone = ref(null)
+
+async function loadApps() {
+  appsError.value = null
+  try {
+    apps.value = (await api('GET', 'apps')).apps
+  } catch (err) {
+    appsError.value = nidError(t, err)
+  }
+}
+watch(tab, (now) => { if (now === 'apps' && apps.value === null) loadApps() }, { immediate: true })
+
+function scopeName(scope) {
+  const cross = /^(read|send):([^/]+)\/(.+)$/.exec(scope)
+  if (!cross) return t(`core.account.appScope.${scope}`)
+  return t(`core.account.appScope.${cross[1]}`, { app: cross[2], name: cross[3] })
+}
+
+const appDetail = (a) => [
+  a.scopes.map(scopeName).join(', '),
+  t('core.account.appLastUsed', { date: new Date(a.lastUsedAt).toLocaleDateString() }),
+].join(' · ')
+
+async function disconnectApp(a) {
+  if (appsBusy.value) return
+  appsBusy.value = a.clientId
+  appsError.value = null
+  appsDone.value = null
+  try {
+    await api('DELETE', `apps/${encodeURIComponent(a.clientId)}`)
+    apps.value = apps.value.filter(x => x.clientId !== a.clientId)
+    appsDone.value = t('core.account.appDisconnected', { name: a.name })
+  } catch (err) {
+    appsError.value = nidError(t, err)
+  } finally {
+    appsBusy.value = null
+  }
+}
+
 // Delete tab
 const delConfirm = ref('')
 const delBusy = ref(false)
@@ -437,13 +480,40 @@ async function deleteAccount() {
             </div>
           </section>
 
-          <!-- Connected OAuth apps arrive with the OAuth provider. -->
           <section v-show="tab === 'apps'" class="am-stack">
-            <div class="am-block am-block--empty">
+            <p v-if="apps === null && !appsError" class="nid-note" role="status">{{ t('core.profiles.loading') }}</p>
+            <div v-else-if="apps && !apps.length" class="am-block am-block--empty">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="TABS[4].icon" /></svg>
               <h3 class="am-block__title">{{ t('core.account.appsEmptyTitle') }}</h3>
               <p class="am-block__hint">{{ t('core.account.appsEmpty') }}</p>
+              <p v-if="appsDone" class="nid-alert nid-alert--ok" role="status">
+                <Icon name="check" class="nid-alert__icon" :sw="2" /><span>{{ appsDone }}</span>
+              </p>
             </div>
+            <div v-else-if="apps" class="am-block">
+              <div class="am-block__head">
+                <h3 class="am-block__title">{{ t('core.account.tabApps') }}</h3>
+                <p class="am-block__hint">{{ t('core.account.appsHint') }}</p>
+              </div>
+              <ul class="am-ways">
+                <li v-for="a in apps" :key="a.clientId" class="am-way">
+                  <span class="am-way__icon am-way__icon--app" aria-hidden="true">{{ a.name.slice(0, 1).toUpperCase() }}</span>
+                  <div class="am-way__text">
+                    <span class="am-way__name">{{ a.name }}</span>
+                    <span class="am-way__detail" :title="appDetail(a)">{{ appDetail(a) }}</span>
+                  </div>
+                  <button type="button" class="nid-btn nid-btn--quiet nid-btn--sm" :disabled="appsBusy === a.clientId" @click="disconnectApp(a)">
+                    {{ t('core.account.disconnect') }}<span class="nid-sr"> {{ a.name }}</span>
+                  </button>
+                </li>
+              </ul>
+              <p v-if="appsDone" class="nid-alert nid-alert--ok" role="status">
+                <Icon name="check" class="nid-alert__icon" :sw="2" /><span>{{ appsDone }}</span>
+              </p>
+            </div>
+            <p v-if="appsError" class="nid-alert nid-alert--error" role="alert">
+              <Icon name="warning" class="nid-alert__icon" :sw="1.8" /><span>{{ appsError }}</span>
+            </p>
           </section>
 
           <section v-show="tab === 'delete'" class="am-stack">
@@ -645,6 +715,7 @@ async function deleteAccount() {
 .am-way { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--nid-field); }
 .am-way__icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; color: var(--nid-ink-hi); background: var(--nid-quiet); }
 .am-way__icon :deep(svg) { width: 17px; height: 17px; }
+.am-way__icon--app { font-size: 0.875rem; font-weight: 700; color: var(--nid-accent-ink); background: var(--nid-accent-bg); box-shadow: inset 0 0 0 1px var(--nid-accent-line); }
 .am-way__text { display: flex; flex: 1; flex-direction: column; min-width: 0; }
 .am-way__name { font-size: 0.9rem; font-weight: 500; color: var(--nid-ink-hi); }
 .am-way__detail { overflow: hidden; font-size: 0.8125rem; color: var(--nid-ink-3); white-space: nowrap; text-overflow: ellipsis; }
