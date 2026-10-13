@@ -34,7 +34,7 @@ export async function disabledAppIdsForProfile(profileId) {
 export function requireAppEnabled(appId) {
   return async (req, res, next) => {
     // Unauthenticated falls through to requireAuth (401); admins bypass.
-    const profile = req.profile || verifyProfile(req)
+    const profile = req.profile || await verifyProfile(req)
     if (!profile || profile.role === 'admin') return next()
     try {
       const disabled = await disabledAppIdsForProfile(profile.profileId)

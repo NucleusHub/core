@@ -1,5 +1,4 @@
 import { Router } from 'express'
-import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import { randomInt } from 'crypto'
 import { readFileSync } from 'fs'
@@ -11,21 +10,14 @@ import RegistryOverride from '../models/RegistryOverride.js'
 import UserOverride from '../models/UserOverride.js'
 import Group from '../models/Group.js'
 import GroupOverride from '../models/GroupOverride.js'
-import { requireAuth, requireAdmin } from '../middleware/auth.js'
+import { requireAuth, requireAdmin, authenticate } from '../middleware/auth.js'
+import { issueSession, revokeSession } from '../lib/session.js'
 import { resolveViewer, filterProfiles } from '../visibility.js'
 import { mountPluginRoutes } from '../serverPlugins.js'
 
 const router = Router()
 
 await mountPluginRoutes(router)
-
-const secret = () => process.env.JWT_SECRET || 'nucleus-jwt-secret'
-const COOKIE = {
-  httpOnly: true,
-  sameSite: 'strict',
-  maxAge: 30 * 24 * 60 * 60 * 1000,
-  path: '/',
-}
 
 const loginAttempts = new Map()
 const RATE_WINDOW_MS = 15 * 60 * 1000
@@ -103,7 +95,7 @@ router.get('/profiles', async (req, res) => {
       imageUpdatedAt: p.imageUpdatedAt,
     }))
     // Debug header exposes the IP the server sees, for filling visibility.json.ips.
-    const viewer = resolveViewer(req)
+    const viewer = await resolveViewer(req)
     res.set('X-Nucleus-Viewer-Ip', viewer.ip || '')
     const picker = req.query.picker === '1' || req.query.picker === 'true'
     res.json(filterProfiles(mapped, viewer, { picker }))
@@ -117,14 +109,9 @@ router.post('/profiles', async (req, res) => {
   try {
     const adminCount = await Profile.countDocuments({ role: 'admin', isGuest: false })
     if (adminCount > 0) {
-      const token = req.cookies?.nucleus_token
-      if (!token) return res.status(401).json({ error: 'Must be logged in as admin' })
-      let claim
-      try {
-        claim = jwt.verify(token, secret())
-      } catch {
-        return res.status(401).json({ error: 'Invalid token' })
-      }
+      if (!req.cookies?.nucleus_token) return res.status(401).json({ error: 'Must be logged in as admin' })
+      const claim = await authenticate(req)
+      if (!claim) return res.status(401).json({ error: 'Invalid token' })
       // Re-check role in DB: tokens live 30 days, so a demoted admin's token must not authorize this.
       const actor = await Profile.findById(claim.profileId).select('role').lean()
       if (!actor || actor.role !== 'admin') return res.status(403).json({ error: 'Admin required' })
@@ -390,12 +377,7 @@ router.post('/login', async (req, res) => {
     profile.lastLoginAt = new Date()
     await profile.save()
 
-    const token = jwt.sign(
-      { profileId: profile._id, name: profile.name, role: profile.role },
-      secret(),
-      { expiresIn: '30d' }
-    )
-    res.cookie('nucleus_token', token, COOKIE)
+    await issueSession(req, res, profile, 'pin')
     res.json({
       _id: profile._id, profileId: profile._id, name: profile.name, role: profile.role,
       emoji: profile.emoji, color: profile.color, pinTemporary: false,
@@ -434,12 +416,7 @@ router.post('/login/set-pin', async (req, res) => {
     profile.lastLoginAt = new Date()
     await profile.save()
 
-    const token = jwt.sign(
-      { profileId: profile._id, name: profile.name, role: profile.role },
-      secret(),
-      { expiresIn: '30d' }
-    )
-    res.cookie('nucleus_token', token, COOKIE)
+    await issueSession(req, res, profile, 'pin')
     res.json({
       _id: profile._id, profileId: profile._id, name: profile.name, role: profile.role,
       emoji: profile.emoji, color: profile.color, pinTemporary: false,
@@ -450,7 +427,8 @@ router.post('/login/set-pin', async (req, res) => {
   }
 })
 
-router.post('/logout', requireAuth, (req, res) => {
+router.post('/logout', requireAuth, async (req, res) => {
+  await revokeSession(req.profile.sid)
   res.clearCookie('nucleus_token', { path: '/' })
   res.json({ ok: true })
 })

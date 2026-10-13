@@ -1,9 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import jwt from 'jsonwebtoken'
+import { authenticate } from './middleware/auth.js'
 
 const FILE = path.join(process.env.STATE_DIR || '/srv/state', 'visibility.json')
-const secret = () => process.env.JWT_SECRET || 'nucleus-jwt-secret'
 
 const EMPTY = { ips: new Map(), profiles: new Map() }
 
@@ -54,12 +53,9 @@ const groupsOf = (index, key) => (key && index.get(key)) || []
 // No group or more than one group = unrestricted.
 const unrestricted = (groups) => groups.length === 0 || groups.length >= 2
 
-export function resolveViewer(req) {
+export async function resolveViewer(req) {
   let profileId = null
-  const token = req.cookies?.nucleus_token
-  if (token) {
-    try { profileId = jwt.verify(token, secret())?.profileId ?? null } catch { /* not logged in */ }
-  }
+  try { profileId = (await authenticate(req))?.profileId ?? null } catch { /* not logged in */ }
   const ip = normIp(
     req.headers['x-real-ip'] ||
     String(req.headers['x-forwarded-for'] || '').split(',')[0] ||

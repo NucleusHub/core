@@ -1,28 +1,19 @@
-import express from 'express'
-import cors from 'cors'
-import cookieParser from 'cookie-parser'
 import mongoose from 'mongoose'
-import router from './routes/index.js'
+import { createApp } from './app.js'
+import { loadJwtSecret } from './lib/secret.js'
 import { runMigrations } from './utils/migration.js'
 import { runPluginMigrations } from './serverPlugins.js'
 
-const app = express()
 const PORT = process.env.PORT || 3005
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/nucleus'
-
-app.use(cors({ origin: true, credentials: true }))
-// Raised limit for base64 avatar data URLs (per-image cap in routes/index.js).
-app.use(express.json({ limit: '4mb' }))
-app.use(cookieParser())
-app.get('/api/auth/health', (_, res) => res.json({ ok: true }))
-app.use('/api/auth', router)
 
 mongoose
   .connect(MONGODB_URI)
   .then(async () => {
     console.log('Connected to MongoDB')
+    await loadJwtSecret(mongoose.connection.db)
     await runMigrations()
     await runPluginMigrations()
-    app.listen(PORT, () => console.log(`Auth server on :${PORT}`))
+    createApp().listen(PORT, () => console.log(`Auth server on :${PORT}`))
   })
   .catch(err => { console.error('MongoDB connection failed:', err); process.exit(1) })
