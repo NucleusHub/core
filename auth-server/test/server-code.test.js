@@ -161,3 +161,26 @@ test('posting the key is rate limited per IP', async () => {
   assert.equal(last.status, 429)
   assert.equal(last.body.error.code, 'rate_limited')
 })
+
+test('rate limit buckets are per client IP behind the proxy', async () => {
+  const fresh = makeApp()
+  await setCode(generateServerCode())
+  const post = (ip) => request(fresh).post('/api/v1/auth/server-code').set('X-Forwarded-For', ip).send({ code: 'nope' })
+  let last
+  for (let i = 0; i < 11; i++) last = await post('203.0.113.1')
+  assert.equal(last.status, 429)
+  const other = await post('203.0.113.2')
+  assert.equal(other.status, 403)
+  assert.equal(other.body.error.code, 'server_code_invalid')
+})
+
+test('a settings failure answers in the v1 error shape', async (t) => {
+  invalidateSettings()
+  t.mock.method(AuthSettings, 'findOneAndUpdate', () => { throw new Error('db down') })
+  const get = await request(app).get('/api/v1/auth/server-code')
+  assert.equal(get.status, 500)
+  assert.equal(get.body.error.code, 'server_error')
+  const post = await request(makeApp()).post('/api/v1/auth/server-code').send({ code: GOOD })
+  assert.equal(post.status, 500)
+  assert.equal(post.body.error.code, 'server_error')
+})
