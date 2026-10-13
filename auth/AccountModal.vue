@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import NidDialog from './NidDialog.vue'
 import NidField from './NidField.vue'
 import NidProviderIcon from './NidProviderIcon.vue'
@@ -9,6 +9,8 @@ import { useAuthSettings } from './useAuthSettings.js'
 import { nidError, fieldErrors, HANDLE_RE, EMAIL_RE, MIN_PASSWORD } from './nidErrors.js'
 import AvatarCircle from './AvatarCircle.vue'
 import { Icon } from '../icons'
+import { qrCall } from './qrApi.js'
+import QRCode from 'qrcode'
 
 const props = defineProps({
   initialTab: { type: String, default: 'profile' },
@@ -280,6 +282,75 @@ async function disconnectApp(a) {
   }
 }
 
+// Sign in an app: show a QR code, then approve the app that claims it.
+const qr = reactive({ state: 'idle', image: null, id: null, client: null, device: null, error: null })
+let qrTimer = null
+
+function qrStop() {
+  clearTimeout(qrTimer)
+  qrTimer = null
+}
+
+async function qrStart() {
+  qrStop()
+  qr.state = 'loading'
+  qr.error = null
+  qr.client = null
+  try {
+    const created = await qrCall('POST', '/app')
+    qr.image = await QRCode.toDataURL(created.qr, { margin: 1, width: 200, errorCorrectionLevel: 'M' })
+    qr.id = created.id
+    qr.state = 'waiting'
+    qrSchedule(created.id)
+  } catch (err) {
+    qr.state = 'error'
+    qr.error = err.code === 'server_code_required' ? t('core.qr.needsServerCode') : err.message
+  }
+}
+
+function qrSchedule(id) {
+  qrTimer = setTimeout(() => qrWatch(id), 2000)
+}
+
+async function qrWatch(id) {
+  if (qr.id !== id) return
+  try {
+    const seen = await qrCall('GET', `/${id}`)
+    if (qr.id !== id) return
+    if (seen.status === 'scanned') {
+      qr.client = seen.client
+      qr.device = seen.device
+      qr.state = 'claimed'
+    } else if (seen.status === 'expired') {
+      qr.state = 'expired'
+      return
+    } else if (seen.status === 'used' || seen.status === 'approved') {
+      qr.state = 'done'
+      return
+    } else if (seen.status === 'denied') {
+      qr.state = 'idle'
+      return
+    }
+  } catch (err) {
+    if (err.status === 404) { qr.state = 'expired'; return }
+  }
+  qrSchedule(id)
+}
+
+async function qrDecide(approve) {
+  const id = qr.id
+  qrStop()
+  try {
+    await qrCall('POST', `/${id}/approve`, { approve })
+    qr.state = approve ? 'done' : 'idle'
+  } catch (err) {
+    qr.state = err.status === 404 ? 'expired' : 'error'
+    qr.error = err.message
+  }
+}
+
+onBeforeUnmount(qrStop)
+
 // Delete tab
 const delConfirm = ref('')
 const delBusy = ref(false)
@@ -514,6 +585,35 @@ async function deleteAccount() {
             <p v-if="appsError" class="nid-alert nid-alert--error" role="alert">
               <Icon name="warning" class="nid-alert__icon" :sw="1.8" /><span>{{ appsError }}</span>
             </p>
+
+            <div class="am-block">
+              <div class="am-block__head">
+                <h3 class="am-block__title">{{ t('core.qr.appTitle') }}</h3>
+                <p class="am-block__hint">{{ t('core.qr.appHint') }}</p>
+              </div>
+              <div v-if="qr.state === 'waiting' || qr.state === 'claimed'" class="am-qr">
+                <img :src="qr.image" width="200" height="200" :alt="t('core.qr.alt')" class="am-qr__img" :class="{ 'is-claimed': qr.state === 'claimed' }">
+                <p v-if="qr.state === 'claimed'" class="nid-note" role="status">
+                  {{ t('core.qr.wantsIn', { app: qr.client?.name || '', device: qr.device || '' }) }}
+                </p>
+              </div>
+              <p v-if="qr.state === 'done'" class="nid-alert nid-alert--ok" role="status">
+                <Icon name="check" class="nid-alert__icon" :sw="2" /><span>{{ t('core.qr.approved') }}</span>
+              </p>
+              <p v-else-if="qr.state === 'expired'" class="nid-note" role="status">{{ t('core.qr.expired') }}</p>
+              <p v-else-if="qr.state === 'error'" class="nid-alert nid-alert--error" role="alert">
+                <Icon name="warning" class="nid-alert__icon" :sw="1.8" /><span>{{ qr.error }}</span>
+              </p>
+              <div class="am-foot">
+                <template v-if="qr.state === 'claimed'">
+                  <button type="button" class="nid-btn nid-btn--primary nid-btn--sm" @click="qrDecide(true)">{{ t('core.qr.approve') }}</button>
+                  <button type="button" class="nid-btn nid-btn--quiet nid-btn--sm" @click="qrDecide(false)">{{ t('core.qr.deny') }}</button>
+                </template>
+                <button v-else-if="qr.state !== 'waiting'" type="button" class="nid-btn nid-btn--accent nid-btn--sm" :disabled="!isNid || qr.state === 'loading'" @click="qrStart">
+                  {{ qr.state === 'expired' || qr.state === 'error' ? t('core.qr.newCode') : t('core.qr.showCode') }}
+                </button>
+              </div>
+            </div>
           </section>
 
           <section v-show="tab === 'delete'" class="am-stack">
@@ -594,6 +694,9 @@ async function deleteAccount() {
 .am-gap { margin-bottom: 16px; }
 .am-banner { display: flex; flex: 1; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
 
+.am-qr { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.am-qr__img { padding: 8px; border-radius: 12px; background: #fff; transition: opacity 0.2s; }
+.am-qr__img.is-claimed { opacity: 0.35; }
 .am-stack { display: flex; flex-direction: column; gap: 16px; }
 
 .am-identity {

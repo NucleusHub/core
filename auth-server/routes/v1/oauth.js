@@ -18,7 +18,7 @@ const ACCENTS = ['nucleus', 'midnight', 'arctic', 'ember', 'forest', 'custom']
 const HEX = /^#[0-9A-Fa-f]{6}$/
 const HOST = /^(?:[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*|\[[0-9A-Fa-f:.]+\])(?::\d{1,5})?$/
 
-class V1Error extends Error {
+export class V1Error extends Error {
   constructor(status, code, message, details) {
     super(message)
     Object.assign(this, { status, code, details })
@@ -70,7 +70,7 @@ function callbackUrl(redirectUri, params) {
 }
 
 // RFC 6749 §4.1.2.1: a bad client or redirect URI is shown, never redirected to (no open redirect).
-async function checkRequest(params) {
+export async function checkRequest(params) {
   const client = await findClient(params.client_id)
   if (!client) throw new V1Error(400, 'unknown_client', 'This app is not registered with Nucleus ID.')
   const redirectUri = typeof params.redirect_uri === 'string' ? params.redirect_uri : ''

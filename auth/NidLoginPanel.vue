@@ -5,6 +5,7 @@ import { useAuth } from './useAuth.js'
 import { useAuthSettings } from './useAuthSettings.js'
 import { nidError, fieldErrors, EMAIL_RE } from './nidErrors.js'
 import NidSignUp from './NidSignUp.vue'
+import QrSignIn from './QrSignIn.vue'
 import NidCrest from './NidCrest.vue'
 import NidField from './NidField.vue'
 import NidProviderIcon from './NidProviderIcon.vue'
@@ -29,7 +30,7 @@ const PROVIDERS = [
 const providers = computed(() => PROVIDERS.filter(p => settings.value.sso?.[p.id]))
 const canSignUp = computed(() => settings.value.signupOpen)
 
-const view = ref(['login', 'forgot', 'signup'].includes(props.initialView) ? props.initialView : 'login')
+const view = ref(['login', 'forgot', 'signup', 'qr'].includes(props.initialView) ? props.initialView : 'login')
 const identifier = ref('')
 const password = ref('')
 const busy = ref(false)
@@ -105,6 +106,8 @@ async function sendReset() {
   <div ref="root" class="nid-login">
     <NidSignUp v-if="view === 'signup'" @signed-in="emit('signed-in')" @cancel="show('login')" />
 
+    <QrSignIn v-else-if="view === 'qr'" @signed-in="emit('signed-in')" @cancel="show('login')" />
+
     <div v-else-if="view === 'forgot-sent'" class="nid-done" role="status">
       <span class="nid-done__mark"><Icon name="send" :sw="1.8" /></span>
       <h2 class="nid-title">{{ t('core.nid.checkEmailTitle') }}</h2>
@@ -168,6 +171,10 @@ async function sendReset() {
 
       <slot name="extra" />
 
+      <button type="button" class="nid-btn nid-btn--quiet nid-btn--block nid-btn--sm nid-login__qr" @click="show('qr')">
+        {{ t('core.qr.signInWithPhone') }}
+      </button>
+
       <div v-if="providers.length" class="nid-login__more">
         <p class="nid-rule"><span>{{ t('core.nid.or') }}</span></p>
         <div class="nid-providers">
@@ -197,5 +204,6 @@ async function sendReset() {
   margin-top: 20px;
 }
 
+.nid-login__qr { margin-top: 12px; }
 .nid-login__plus { width: 15px; height: 15px; }
 </style>
