@@ -98,9 +98,9 @@ router.get('/profiles', serverCodeGate, async (req, res) => {
   try {
     const all = await Profile.find().lean()
     const guests = all.filter(p => p.isGuest)
-    // A never-confirmed sign-up isn't anybody's yet, so it stays off the picker.
+    // A never-confirmed sign-up isn't anybody's yet; an upgraded PIN profile stays even while unconfirmed.
     const regular = all
-      .filter(p => !p.isGuest && !(p.account && !p.account.emailVerifiedAt))
+      .filter(p => !p.isGuest && !(p.account && !p.account.emailVerifiedAt && !p.pin))
       .sort((a, b) => {
         if (!a.lastLoginAt && !b.lastLoginAt) return 0
         if (!a.lastLoginAt) return 1

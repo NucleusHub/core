@@ -654,3 +654,16 @@ test('bootstrap claim is compare-and-set: one winner, later claims lose', async 
   assert.equal(wins.filter(Boolean).length, 1)
   assert.equal(await claimBootstrap(c._id), false)
 })
+
+test('picker keeps an upgraded PIN profile whose verification is pending, and PIN login still works', async () => {
+  await enableMail()
+  const p = await createProfile({ name: 'Petr', pin: '1234' })
+  const pinCookie = cookieOf(await loginAs(request(app), p, '1234'))
+  const up = await request(app).post('/api/auth/nid/upgrade').set('Cookie', pinCookie)
+    .send({ handle: 'petr', email: 'p@x.com', password: PW, pin: '1234' })
+  assert.equal(up.status, 201)
+  assert.equal((await Profile.findById(p._id).lean()).account.emailVerifiedAt, null)
+  const list = await request(app).get('/api/auth/profiles')
+  assert.deepEqual(list.body.map(x => x.name), ['Petr'])
+  assert.equal((await loginAs(request(app), p, '1234')).status, 200)
+})
