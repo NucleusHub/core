@@ -6,6 +6,7 @@ import settingsRouter from './routes/settings.js'
 import { serverCodeRouter } from './routes/v1/serverCode.js'
 import { oauthRouter } from './routes/v1/oauth.js'
 import { qrRouter } from './routes/v1/qr.js'
+import { appProxyRouter } from './routes/v1/appProxy.js'
 import { nidRouter } from './routes/nid.js'
 import { ssoRouter } from './routes/sso.js'
 
@@ -15,6 +16,8 @@ export function createApp() {
   app.set('trust proxy', 1)
   app.use(corsPolicy)
   app.use(sameOrigin)
+  // Before the body parser: bodies are streamed through untouched.
+  app.use(['/api/v1/app-data', '/api/v1/files', '/api/v1/views', '/api/v1/commands', '/api/v1/apps'], appProxyRouter())
   // Raised limit for base64 avatar data URLs (per-image cap in routes/index.js).
   app.use(express.json({ limit: '4mb' }))
   app.use(cookieParser())

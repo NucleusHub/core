@@ -10,6 +10,7 @@ import { mailEnabled, sendTest } from '../lib/mailer.js'
 import { randomBytes } from 'node:crypto'
 import mongoose from 'mongoose'
 import { clientView, listClients, setTrusted } from '../lib/oauth.js'
+import { installedApps } from '../lib/installedApps.js'
 
 const router = Router()
 
@@ -259,6 +260,55 @@ router.patch('/clients/:id', requireNidAdmin, async (req, res) => {
     const client = await setTrusted(String(req.params.id), req.body.trusted)
     if (!client) return res.status(404).json({ error: 'Not found' })
     res.json(clientView(client))
+  } catch {
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+const DATA_COLLECTION = /^([a-z0-9][a-z0-9-]{1,48})_(appdata|files\.files)$/
+const APP_ID_RE = /^[a-z0-9][a-z0-9-]{1,48}$/
+
+// Per-app data left in Mongo, whether or not the app is still installed.
+router.get('/data', requireNidAdmin, async (_req, res) => {
+  try {
+    const db = mongoose.connection.db
+    const installed = new Set((await installedApps()).flatMap(a => [a.id, a.clientId].filter(Boolean)))
+    const apps = new Map()
+    for (const { name } of await db.listCollections({}, { nameOnly: true }).toArray()) {
+      const m = name.match(DATA_COLLECTION)
+      if (!m) continue
+      const [stats, count] = await Promise.all([
+        db.command({ collStats: name }).catch(() => ({})),
+        db.collection(name).estimatedDocumentCount(),
+      ])
+      const app = apps.get(m[1]) || { appId: m[1], installed: installed.has(m[1]), bytes: 0, keys: 0, files: 0 }
+      app.bytes += stats.size || 0
+      if (m[2] === 'appdata') app.keys += count
+      else {
+        app.files += count
+        const chunks = await db.command({ collStats: `${m[1]}_files.chunks` }).catch(() => ({}))
+        app.bytes += chunks.size || 0
+      }
+      apps.set(m[1], app)
+    }
+    res.set('Cache-Control', 'no-store').json([...apps.values()].sort((a, b) => a.appId.localeCompare(b.appId)))
+  } catch {
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+router.delete('/data/:appId', requireNidAdmin, async (req, res) => {
+  const appId = String(req.params.appId)
+  if (!APP_ID_RE.test(appId)) return res.status(400).json({ error: 'Invalid app id' })
+  try {
+    const apps = await installedApps()
+    if (apps.some(a => a.id === appId || a.clientId === appId)) return res.status(409).json({ error: 'App is installed' })
+    const db = mongoose.connection.db
+    const names = new Set((await db.listCollections({}, { nameOnly: true }).toArray()).map(c => c.name))
+    const own = [`${appId}_appdata`, `${appId}_files.files`, `${appId}_files.chunks`].filter(n => names.has(n))
+    if (!own.length) return res.status(404).json({ error: 'Not found' })
+    for (const n of own) await db.collection(n).drop()
+    res.status(204).end()
   } catch {
     res.status(500).json({ error: 'Server error' })
   }
