@@ -1,5 +1,6 @@
 import mongoose from 'mongoose'
 import { mailEnabled } from '../lib/mailer.js'
+import { ssoEnabled } from '../lib/sso.js'
 
 export const DEFAULT_LIMITS = {
   dataValueBytes: 262144,
@@ -59,18 +60,12 @@ export function invalidateSettings() {
   cached = null
 }
 
-const filled = (o) => !!o && Object.values(o).length > 0 && Object.values(o).every(Boolean)
-
 export function publicSettings(s) {
   return {
     userLogin: s.userLogin,
     signupOpen: s.signupOpen,
     pinAfterUpgrade: s.pinAfterUpgrade,
     mailEnabled: mailEnabled(s),
-    sso: {
-      apple: filled(s.sso?.apple),
-      google: filled(s.sso?.google),
-      github: filled(s.sso?.github),
-    },
+    sso: ssoEnabled(s),
   }
 }

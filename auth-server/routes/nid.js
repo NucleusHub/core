@@ -37,7 +37,7 @@ const handle = (fn) => async (req, res, next) => {
   }
 }
 
-function requireNid(req, res, next) {
+export function requireNid(req, res, next) {
   return requireAuth(req, res, () => req.profile.via === 'nid'
     ? next()
     : fail(res, 403, 'nid_required', 'Sign in with NucleusID to do this.'))
@@ -99,7 +99,7 @@ function newAccount({ handle: h, email }, passwordHash, verified) {
 }
 
 // A never-confirmed claim owns neither address nor handle, so a typo or squatter can't block the real owner.
-async function releaseUnverified({ handle: h, email }, exceptId) {
+export async function releaseUnverified({ handle: h, email }, exceptId) {
   const or = []
   if (email) or.push({ 'account.emailLower': email })
   if (h) or.push({ 'account.handleLower': h })
@@ -417,7 +417,11 @@ export function nidRouter() {
     const pending = !!newEmail && mailEnabled(settings)
     const update = {}
     if (newEmail) {
-      if (!(await verifyPassword(body.currentPassword, profile.account.passwordHash)))
+      // SSO-only accounts have no password to re-enter; typing the handle guards against a stray click.
+      if (!profile.account.passwordHash) {
+        if (norm(body.confirm).replace(/^@/, '') !== profile.account.handleLower)
+          return fail(res, 400, 'confirm_required', 'Type your handle to confirm the email change.', { fields: { confirm: 'Type your handle exactly as it is shown.' } })
+      } else if (!(await verifyPassword(body.currentPassword, profile.account.passwordHash)))
         return fail(res, 400, 'wrong_password', 'Enter your current password to change the email.', { fields: { currentPassword: 'Wrong password.' } })
       if (await Profile.exists({ _id: { $ne: profile._id }, 'account.emailLower': newEmail, 'account.emailVerifiedAt': { $ne: null } }))
         return conflict(res, 'email')
@@ -451,7 +455,7 @@ export function nidRouter() {
     if (profile.account.passwordHash) {
       if (!(await verifyPassword(req.body?.password, profile.account.passwordHash)))
         return fail(res, 400, 'wrong_password', 'That is not your password.', { fields: { password: 'Wrong password.' } })
-    } else if (norm(req.body?.handle).replace(/^@/, '') !== profile.account.handleLower) {
+    } else if (norm(req.body?.confirm ?? req.body?.handle).replace(/^@/, '') !== profile.account.handleLower) {
       return invalid(res, { handle: 'Type your handle exactly as it is shown.' })
     }
     if (profile.role === 'admin' && (await Profile.countDocuments({ role: 'admin', isGuest: false })) <= 1)

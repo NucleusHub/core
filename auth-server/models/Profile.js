@@ -59,6 +59,11 @@ const profileSchema = new mongoose.Schema({
 
 profileSchema.index({ 'account.handleLower': 1 }, { unique: true, sparse: true })
 profileSchema.index({ 'account.emailLower': 1 }, { unique: true, sparse: true })
+// Per-element keys: one provider account can sign in to only one NucleusID.
+profileSchema.index(
+  { 'account.identities.provider': 1, 'account.identities.subject': 1 },
+  { unique: true, partialFilterExpression: { 'account.identities.subject': { $exists: true } } },
+)
 
 export const accountSummary = (profile) => profile?.account
   ? {
