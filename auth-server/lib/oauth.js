@@ -24,6 +24,11 @@ export const CHALLENGE = /^[A-Za-z0-9_-]{43}$/
 const hash = (value) => createHash('sha256').update(String(value), 'utf8').digest('hex')
 const secret = (prefix) => prefix + randomBytes(32).toString('base64url')
 const challenge = (verifier) => createHash('sha256').update(verifier).digest('base64url')
+const sameString = (a, b) => {
+  const x = Buffer.from(String(a))
+  const y = Buffer.from(String(b))
+  return x.length === y.length && timingSafeEqual(x, y)
+}
 const oid = (id) => new mongoose.Types.ObjectId(String(id))
 
 // First-party apps; labels are nucleus-web's README registrations.
@@ -70,9 +75,7 @@ export async function findClient(id) {
 export function clientSecretMatches(client, presented) {
   if (!client.secretHash) return !presented
   if (typeof presented !== 'string' || !presented) return false
-  const a = Buffer.from(hash(presented))
-  const b = Buffer.from(client.secretHash)
-  return a.length === b.length && timingSafeEqual(a, b)
+  return sameString(hash(presented), client.secretHash)
 }
 
 export async function listClients() {
@@ -206,7 +209,7 @@ export async function redeemCode({ code, clientId, redirectUri, verifier }) {
   if (!grant) return 'Unknown or expired code.'
   if (row.clientId !== clientId) return 'That code was issued to another client.'
   if (row.redirectUri !== redirectUri) return 'redirect_uri does not match the one the code was issued for.'
-  if (typeof verifier !== 'string' || !VERIFIER.test(verifier) || challenge(verifier) !== row.codeChallenge)
+  if (typeof verifier !== 'string' || !VERIFIER.test(verifier) || !sameString(challenge(verifier), row.codeChallenge))
     return 'code_verifier does not match the code_challenge.'
   return issuePair(grant, row.scopes)
 }
@@ -231,7 +234,7 @@ export async function refresh({ refreshToken, clientId }) {
   }
 
   if (Date.now() - new Date(row.usedAt).getTime() > REFRESH_RACE_MS) {
-    await OAuthToken.deleteMany({ grantId: row.grantId })
+    await Promise.all([OAuthToken.deleteMany({ grantId: row.grantId }), OAuthCode.deleteMany({ grantId: row.grantId })])
     console.warn(`[oauth] refresh token reused for grant ${row.grantId}; its tokens were revoked`)
   }
   return 'That refresh token was already used.'

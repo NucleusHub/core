@@ -328,6 +328,20 @@ test('token endpoint: client errors and grant types', async () => {
   assert.equal(malformed.status, 400)
 })
 
+test('token endpoint: ambiguous client credentials are invalid_request', async () => {
+  const noColon = await request(app).post('/api/v1/oauth/token').set('Authorization', `Basic ${Buffer.from('todo').toString('base64')}`)
+    .type('form').send({ grant_type: 'refresh_token', refresh_token: 'nrt_x' })
+  assert.equal(noColon.status, 400)
+  assert.equal(noColon.body.error, 'invalid_request')
+  const mismatch = await request(app).post('/api/v1/oauth/token').set('Authorization', `Basic ${Buffer.from('todo:').toString('base64')}`)
+    .type('form').send({ grant_type: 'refresh_token', refresh_token: 'nrt_x', client_id: 'notes' })
+  assert.equal(mismatch.status, 400)
+  assert.equal(mismatch.body.error, 'invalid_request')
+  const same = await request(app).post('/api/v1/oauth/token').set('Authorization', `Basic ${Buffer.from('todo:').toString('base64')}`)
+    .type('form').send({ grant_type: 'refresh_token', refresh_token: 'nrt_x', client_id: 'todo' })
+  assert.equal(same.body.error, 'invalid_grant')
+})
+
 test('token endpoint accepts JSON too', async () => {
   const { cookie } = await nidUser()
   const { code, verifier } = await authorize(cookie)
@@ -367,6 +381,18 @@ test('reusing a refresh token after the race window revokes the whole grant', as
   assert.equal((await userinfo(next.body.access_token)).status, 401)
   const stolen = await token({ grant_type: 'refresh_token', refresh_token: next.body.refresh_token, client_id: 'todo' })
   assert.equal(stolen.body.error, 'invalid_grant')
+})
+
+test('reuse detection also voids codes still outstanding for the grant', async () => {
+  const { cookie } = await nidUser()
+  const first = await signIn(cookie)
+  await token({ grant_type: 'refresh_token', refresh_token: first.refresh_token, client_id: 'todo' })
+  const pending = await authorize(cookie)
+  await OAuthToken.updateMany({ usedAt: { $ne: null } }, { usedAt: new Date(Date.now() - 31_000) })
+  await token({ grant_type: 'refresh_token', refresh_token: first.refresh_token, client_id: 'todo' })
+  assert.equal(await OAuthCode.countDocuments(), 0)
+  const late = await token({ grant_type: 'authorization_code', code: pending.code, client_id: 'todo', redirect_uri: REDIRECT, code_verifier: pending.verifier })
+  assert.equal(late.body.error, 'invalid_grant')
 })
 
 test('two refreshes at once: exactly one wins', async () => {

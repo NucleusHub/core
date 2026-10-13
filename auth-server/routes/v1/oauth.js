@@ -97,14 +97,16 @@ async function authenticateClient(req) {
   if (scheme?.toLowerCase() === 'basic' && encoded) {
     const decoded = Buffer.from(encoded, 'base64').toString('utf8')
     const colon = decoded.indexOf(':')
-    if (colon > 0) {
-      try {
-        id = decodeURIComponent(decoded.slice(0, colon))
-        secret = decodeURIComponent(decoded.slice(colon + 1))
-      } catch {
-        throw new OAuthError('invalid_request', 'Malformed client credentials.')
-      }
+    if (colon < 1) throw new OAuthError('invalid_request', 'Malformed client credentials.')
+    try {
+      id = decodeURIComponent(decoded.slice(0, colon))
+      secret = decodeURIComponent(decoded.slice(colon + 1))
+    } catch {
+      throw new OAuthError('invalid_request', 'Malformed client credentials.')
     }
+    // Two different identities in one request: refuse rather than pick one.
+    if (req.body?.client_id !== undefined && req.body.client_id !== id)
+      throw new OAuthError('invalid_request', 'client_id in the body does not match the Authorization header.')
   }
   const client = await findClient(id)
   if (!client || !clientSecretMatches(client, secret))

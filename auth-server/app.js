@@ -1,6 +1,6 @@
 import express from 'express'
-import cors from 'cors'
 import cookieParser from 'cookie-parser'
+import { corsPolicy, sameOrigin } from './middleware/origin.js'
 import router from './routes/index.js'
 import settingsRouter from './routes/settings.js'
 import { serverCodeRouter } from './routes/v1/serverCode.js'
@@ -12,7 +12,8 @@ export function createApp() {
   const app = express()
   // One proxy hop (nginx) in front; without this every client shares the nginx IP for rate limits.
   app.set('trust proxy', 1)
-  app.use(cors({ origin: true, credentials: true }))
+  app.use(corsPolicy)
+  app.use(sameOrigin)
   // Raised limit for base64 avatar data URLs (per-image cap in routes/index.js).
   app.use(express.json({ limit: '4mb' }))
   app.use(cookieParser())
