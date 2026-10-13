@@ -87,10 +87,10 @@ async function start(name, query = {}, cookie) {
   return { res, location, state: location.searchParams.get('state'), flow: pair(cookieNamed(res, 'nucleus_sso')) }
 }
 
-async function finish(name, flowStart, { extra = {}, cookie, state } = {}) {
+async function finish(name, flowStart, { extra = {}, cookie, state, post = name === 'apple' } = {}) {
   const params = { code: 'the-code', state: state ?? flowStart.state, ...extra }
   const cookies = [flowStart.flow, cookie].filter(Boolean).join('; ')
-  if (name === 'apple')
+  if (post)
     return request(app).post(`/api/auth/nid/sso/${name}/callback`).set('Cookie', cookies).type('form').send(params)
   return request(app).get(`/api/auth/nid/sso/${name}/callback`).query(params).set('Cookie', cookies)
 }
@@ -277,18 +277,45 @@ test('link mode adds the identity to the signed-in account', async () => {
   assert.equal(swapped.headers.location, '/?sso_error=session_changed')
 })
 
-test('link mode works from a PIN session on a profile with an account', async () => {
+test('link mode refuses PIN sessions: only a NucleusID session may attach a way in', async () => {
   const alice = await accountProfile({ pin: '1234' })
   const login = await request(app).post('/api/auth/login').send({ profileId: String(alice._id), pin: '1234' })
-  const cookie = pair(cookieNamed(login, 'nucleus_token'))
-  const res = await flow('github', { query: { mode: 'link' }, startCookie: cookie, cookie })
-  assert.equal(res.headers.location, '/?account=linked')
+  const pinCookie = pair(cookieNamed(login, 'nucleus_token'))
+  const r1 = await request(app).get('/api/auth/nid/sso/github/start').query({ mode: 'link' }).set('Cookie', pinCookie)
+  assert.equal(r1.status, 302)
+  assert.equal(r1.headers.location, '/?sso_error=nid_required')
+  assert.equal(cookieNamed(r1, 'nucleus_sso'), undefined)
 
-  const plain = await createProfile({ name: 'Plain', pin: '9999' })
-  const l2 = await request(app).post('/api/auth/login').send({ profileId: String(plain._id), pin: '9999' })
-  const c2 = pair(cookieNamed(l2, 'nucleus_token'))
-  const r2 = await request(app).get('/api/auth/nid/sso/github/start').query({ mode: 'link' }).set('Cookie', c2)
-  assert.equal(r2.headers.location, '/?sso_error=no_account')
+  // Started under NucleusID, finished under a PIN session of the same profile: still refused.
+  const nidCookie = await loginAsNid(alice)
+  const s = await start('github', { mode: 'link' }, nidCookie)
+  const r2 = await finish('github', s, { cookie: pinCookie })
+  assert.equal(r2.headers.location, '/?sso_error=nid_required')
+  assert.equal((await Profile.findById(alice._id).lean()).account.identities.length, 0)
+})
+
+test('only Apple may call back with POST', async () => {
+  const s = await start('github')
+  const res = await finish('github', s, { post: true })
+  assert.equal(res.headers.location, '/?sso_error=invalid_request')
+  assert.equal(calls.length, 0)
+  assert.equal(await Profile.countDocuments(), 0)
+})
+
+test('apple link: the flow vouches for the account only while its session is alive', async () => {
+  const alice = await accountProfile()
+  const cookie = await loginAsNid(alice)
+  // Apple's cross-site POST arrives without the Lax session cookie.
+  let res = await finish('apple', await start('apple', { mode: 'link' }, cookie))
+  assert.equal(res.headers.location, '/?account=linked')
+  assert.equal((await Profile.findById(alice._id).lean()).account.identities[0].provider, 'apple')
+
+  await Profile.updateOne({ _id: alice._id }, { $set: { 'account.identities': [] } })
+  const s = await start('apple', { mode: 'link' }, cookie)
+  await Session.deleteMany({ profileId: alice._id })
+  res = await finish('apple', s)
+  assert.equal(res.headers.location, '/?sso_error=session_changed')
+  assert.equal((await Profile.findById(alice._id).lean()).account.identities.length, 0)
 })
 
 test('return only accepts same-origin relative paths', async () => {
@@ -356,7 +383,7 @@ test('server key gate: start needs the pass, callback trusts the flow cookie and
   assert.equal(blocked.status, 403)
   assert.equal(blocked.body.code, 'server_code_required')
 
-  const pass = `nucleus_server_code=${sign({ f: fingerprint(CODE) }, 3600)}`
+  const pass = `nucleus_server_code=${sign({ f: fingerprint(CODE) }, 3600, 'sc')}`
   const s = await start('github', {}, pass)
   // The callback request itself carries no pass cookie (Apple's cross-site POST would not).
   const res = await finish('github', s)
@@ -367,6 +394,12 @@ test('server key gate: start needs the pass, callback trusts the flow cookie and
   const s2 = await start('github', {}, pass)
   await settings({ serverCode: 'nucleus' + 'Z'.repeat(32) + 'home' })
   assert.equal((await finish('github', s2)).headers.location, '/?sso_error=server_code_required')
+
+  // A flow cookie is signed with the same key and carries `f`, but must not pass as the server-key cookie.
+  await settings({ serverCode: CODE })
+  const s3 = await start('github', {}, pass)
+  const posing = `nucleus_server_code=${s3.flow.slice('nucleus_sso='.length)}`
+  assert.equal((await request(app).get('/api/auth/nid/sso/github/start').set('Cookie', posing)).status, 403)
 })
 
 test('unlink refuses to remove the last way in', async () => {

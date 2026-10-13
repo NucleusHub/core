@@ -41,7 +41,7 @@ export function serverCodeRouter() {
       const { serverCode } = await getSettings()
       if (!serverCode || !sameCode(given, serverCode))
         return v1Error(res, 403, 'server_code_rejected', "The server didn't accept this code.")
-      res.cookie(SERVER_CODE_COOKIE, sign({ f: fingerprint(serverCode) }, SERVER_CODE_TTL_SEC), {
+      res.cookie(SERVER_CODE_COOKIE, sign({ f: fingerprint(serverCode) }, SERVER_CODE_TTL_SEC, 'sc'), {
         httpOnly: true, sameSite: 'lax', secure: isHttps(req), maxAge: SERVER_CODE_TTL_SEC * 1000, path: '/',
       })
       if (req.profile) await grantServerAccess(req.profile.profileId)

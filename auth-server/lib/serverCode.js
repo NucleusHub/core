@@ -30,12 +30,13 @@ export const fingerprint = (code) => createHash('sha256').update(`server-code:${
 const key = () => createHash('sha256').update(`server-code-cookie:${jwtSecret()}`).digest()
 const mac = (payload) => createHmac('sha256', key()).update(payload).digest('base64url')
 
-export function sign(value, ttlSec) {
-  const payload = Buffer.from(JSON.stringify({ ...value, exp: Date.now() + ttlSec * 1000 })).toString('base64url')
+// `t` names the purpose: values share one key, so a cookie of one kind must not verify as another.
+export function sign(value, ttlSec, t) {
+  const payload = Buffer.from(JSON.stringify({ ...value, t, exp: Date.now() + ttlSec * 1000 })).toString('base64url')
   return `${payload}.${mac(payload)}`
 }
 
-export function unsign(raw) {
+export function unsign(raw, t) {
   if (typeof raw !== 'string') return null
   const [payload, signature] = raw.split('.')
   if (!payload || !signature) return null
@@ -44,14 +45,14 @@ export function unsign(raw) {
   if (expected.length !== given.length || !timingSafeEqual(expected, given)) return null
   try {
     const value = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))
-    return typeof value?.exp === 'number' && value.exp > Date.now() ? value : null
+    return typeof t === 'string' && value?.t === t && typeof value.exp === 'number' && value.exp > Date.now() ? value : null
   } catch {
     return null
   }
 }
 
 export const cookiePassed = (req, code) =>
-  !!code && unsign(req.cookies?.[SERVER_CODE_COOKIE])?.f === fingerprint(code)
+  !!code && unsign(req.cookies?.[SERVER_CODE_COOKIE], 'sc')?.f === fingerprint(code)
 
 export const hasServerAccess = (profile) => profile?.account?.serverAccess === true
 

@@ -41,14 +41,17 @@ test('code format, generation, comparison and fingerprint', () => {
 })
 
 test('signed values round-trip, reject tampering and expire', () => {
-  const s = sign({ f: 'x' }, 60)
-  assert.equal(unsign(s).f, 'x')
+  const s = sign({ f: 'x' }, 60, 'sc')
+  assert.equal(unsign(s, 'sc').f, 'x')
   const [payload, mac] = s.split('.')
-  const forged = Buffer.from(JSON.stringify({ f: 'y', exp: Date.now() + 60000 })).toString('base64url')
-  assert.equal(unsign(`${forged}.${mac}`), null)
-  assert.equal(unsign(`${payload}.x${mac.slice(1)}`), null)
-  assert.equal(unsign(sign({ f: 'x' }, -1)), null)
-  assert.equal(unsign(undefined), null)
+  const forged = Buffer.from(JSON.stringify({ f: 'y', t: 'sc', exp: Date.now() + 60000 })).toString('base64url')
+  assert.equal(unsign(`${forged}.${mac}`, 'sc'), null)
+  assert.equal(unsign(`${payload}.x${mac.slice(1)}`, 'sc'), null)
+  assert.equal(unsign(sign({ f: 'x' }, -1, 'sc'), 'sc'), null)
+  assert.equal(unsign(undefined, 'sc'), null)
+  // Same key, different purpose: one kind of signed cookie never stands in for another.
+  assert.equal(unsign(sign({ f: 'x' }, 60, 'sso'), 'sc'), null)
+  assert.equal(unsign(s), null)
 })
 
 test('no code: nothing is gated and status says passed', async () => {

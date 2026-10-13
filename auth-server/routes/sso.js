@@ -1,5 +1,6 @@
 import express, { Router } from 'express'
 import Profile, { colorFromName } from '../models/Profile.js'
+import Session from '../models/Session.js'
 import { getSettings } from '../models/AuthSettings.js'
 import { authenticate } from '../middleware/auth.js'
 import { serverCodeGate } from '../middleware/serverCode.js'
@@ -109,20 +110,24 @@ export function ssoRouter() {
         const mode = req.query.mode === 'link' ? 'link' : 'login'
         const claims = await authenticate(req)
         let pid = null
+        let sid = null
         if (mode === 'link') {
           if (!claims) return failRedirect(res, 'signed_out')
+          // A PIN unlock must not be able to attach a way into NucleusID sign-in.
+          if (claims.via !== 'nid') return failRedirect(res, 'nid_required')
           if (!(await Profile.exists({ _id: claims.profileId, account: { $exists: true } }))) return failRedirect(res, 'no_account')
           pid = String(claims.profileId)
+          sid = claims.sid
         }
         const secrets = newFlowSecrets()
         const passed = !!settings.serverCode && cookiePassed(req, settings.serverCode)
         const flow = {
-          p: id, mode, pid, ret: safeReturn(req.query.return), ...secrets,
+          p: id, mode, pid, sid, ret: safeReturn(req.query.return), ...secrets,
           // The callback can't see the gate (Apple's POST is cross-site), so the result travels in the signed flow.
           f: passed ? fingerprint(settings.serverCode) : null,
           sess: !!claims,
         }
-        res.cookie(FLOW_COOKIE, sign(flow, FLOW_TTL_SEC), { ...flowCookieOptions(req, id), maxAge: FLOW_TTL_SEC * 1000 })
+        res.cookie(FLOW_COOKIE, sign(flow, FLOW_TTL_SEC, 'sso'), { ...flowCookieOptions(req, id), maxAge: FLOW_TTL_SEC * 1000 })
         res.redirect(302, findProvider(settings, id).authorizeUrl(settings, secrets))
       } catch (err) {
         console.error('[sso]', err)
@@ -133,8 +138,10 @@ export function ssoRouter() {
   async function callback(req, res) {
     const id = req.params.provider
     const params = (req.method === 'POST' ? req.body : req.query) || {}
-    const flow = unsign(req.cookies?.[FLOW_COOKIE])
+    const flow = unsign(req.cookies?.[FLOW_COOKIE], 'sso')
     res.clearCookie(FLOW_COOKIE, flowCookieOptions(req, id))
+    // Only Apple uses form_post; anything else POSTing here is not a provider redirect.
+    if (req.method === 'POST' && id !== 'apple') return failRedirect(res, 'invalid_request')
 
     if (params.error) return failRedirect(res, ['access_denied', 'user_cancelled_authorize'].includes(params.error) ? 'cancelled' : 'provider_error')
     if (!flow || flow.p !== id || typeof params.state !== 'string' || !sameCode(params.state, flow.state))
@@ -157,9 +164,11 @@ export function ssoRouter() {
     const known = await Profile.findOne(identityFilter(id, info.subject)).select('_id').lean()
 
     if (flow.mode === 'link') {
-      // Lax session cookies don't ride Apple's cross-site POST; there the signed flow vouches for the account.
+      // Lax session cookies don't ride Apple's cross-site POST; there the flow's session, if still alive, vouches.
       const claims = await authenticate(req)
+      if (claims && claims.via !== 'nid') return failRedirect(res, 'nid_required')
       if (claims ? String(claims.profileId) !== flow.pid : req.method !== 'POST') return failRedirect(res, 'session_changed')
+      if (!(await Session.exists({ _id: flow.sid, profileId: flow.pid, expiresAt: { $gt: new Date() } }))) return failRedirect(res, 'session_changed')
       if (known && String(known._id) !== flow.pid) return failRedirect(res, 'identity_taken')
       if (!known) {
         const err = await link(flow.pid, id, info)
