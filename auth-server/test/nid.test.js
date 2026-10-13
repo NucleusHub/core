@@ -403,6 +403,7 @@ test('account: get, patch and delete', async () => {
   assert.equal(got.body.handle, 'alice')
   assert.equal(got.body.displayName, 'Alice')
   assert.equal(got.body.passwordHash, undefined)
+  assert.equal(got.body.hasPassword, true)
 
   const taken = await request(app).patch('/api/auth/nid/account').set('Cookie', cookie).send({ handle: 'BOB' })
   assert.equal(taken.status, 409)

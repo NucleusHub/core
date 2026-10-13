@@ -139,6 +139,7 @@ const accountView = (p) => ({
   pendingEmail: p.account.pendingEmail ?? null,
   displayName: p.name,
   serverAccess: !!p.account.serverAccess,
+  hasPassword: !!p.account.passwordHash,
   identities: (p.account.identities || []).map(({ provider, email, linkedAt }) => ({ provider, email, linkedAt })),
   createdAt: p.account.createdAt,
 })

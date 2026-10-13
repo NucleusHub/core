@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onBeforeUnmount } from 'vue'
 import { LiquidGlass } from '@zaosoula/liquid-glass-vue/components'
 import { useI18n } from '../useI18n.js'
 import { useAuth } from './useAuth.js'
@@ -8,6 +8,9 @@ import { coreLaunchers } from '../usePluginExtensions.js'
 import AvatarCircle from './AvatarCircle.vue'
 import PinInput from './PinInput.vue'
 import ProfileSettingsModal from './ProfileSettingsModal.vue'
+import NidLoginPanel from './NidLoginPanel.vue'
+import NidSignUp from './NidSignUp.vue'
+import { useAuthSettings } from './useAuthSettings.js'
 import { Icon } from '../icons'
 import CloseIcon from '@core/assets/icons/close.svg?component'
 import ArrowLeftIcon from '@core/assets/icons/arrow-left.svg?component'
@@ -15,15 +18,35 @@ import ArrowLeftIcon from '@core/assets/icons/arrow-left.svg?component'
 const props = defineProps({
   closeable: { type: Boolean, default: false },
   preselectedId: { type: String, default: null },
+  initialView: { type: String, default: null },
+  notice: { type: String, default: null },
 })
 const emit = defineEmits(['close'])
 
 const { t } = useI18n()
-const { login, completeTempLogin, profile: currentProfile } = useAuth()
+const { login, completeTempLogin, profile: currentProfile, openAccountPanel } = useAuth()
 const { isPluginEnabled } = useRegistry()
+const { settings: authSettings, ensureLoaded: loadAuthSettings, refresh: refreshAuthSettings } = useAuthSettings()
+
+// userLogin: 'profiles' still offers a NucleusID link (admins need it), 'both' shows tabs, 'nid' hides the picker.
+const loginMode = computed(() => authSettings.value.userLogin)
+const bootstrap = computed(() => !authSettings.value.hasAdmin)
+const view = ref('profiles')
+const nidNotice = ref(null)
+const activeNotice = computed(() => nidNotice.value || props.notice)
+
+function onNidSignedIn() {
+  refreshAuthSettings()
+  if (props.closeable) window.location.reload()
+}
+
 function launch(l) {
   emit('close')
   l.open()
+}
+function openAccount() {
+  emit('close')
+  openAccountPanel(currentProfile.value?.account ? 'manage' : 'upgrade')
 }
 
 const profiles = ref([])
@@ -73,7 +96,8 @@ onMounted(async () => {
     applyRateLimit(storedUntil - Date.now())
   }
 
-  await loadProfiles()
+  await Promise.all([loadProfiles(), loadAuthSettings()])
+  if (loginMode.value === 'nid' || props.initialView === 'nid' || props.notice) view.value = 'nid'
   loading.value = false
   if (props.preselectedId) {
     const p = profiles.value.find(p => p._id === props.preselectedId)
@@ -148,6 +172,13 @@ async function doLogin(profileId, pin) {
     }
     if (props.closeable) window.location.reload()
   } catch (err) {
+    if (err.code === 'nid_required' || err.code === 'nid_only') {
+      back()
+      pinOnly.value = false
+      nidNotice.value = t('core.nid.err.nidRequired')
+      view.value = 'nid'
+      return
+    }
     handlePinError(err)
   }
 }
@@ -226,6 +257,11 @@ async function createProfile() {
             <component :is="l.iconOutline || l.icon" v-if="l.iconOutline || l.icon" class="w-6 h-6" />
           </button>
         </template>
+        <button v-if="currentProfile && !currentProfile.isGuest" @click="openAccount"
+          class="h-11 px-4 flex items-center gap-2 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white text-sm font-medium transition-colors cursor-pointer">
+          <Icon name="lock" class="w-5 h-5" :sw="1.6" />
+          {{ currentProfile.account ? t('core.account.manage') : t('core.account.upgrade') }}
+        </button>
         <button v-if="currentProfile && !currentProfile.isGuest"
           @click="settingsFor = { ...currentProfile }"
           :title="t('core.profiles.settings')" :aria-label="t('core.profiles.settings')"
@@ -238,9 +274,32 @@ async function createProfile() {
         </button>
       </div>
 
-      <div v-if="!pinOnly" class="relative z-10 flex-1 min-h-0 overflow-y-auto flex flex-col items-center justify-center gap-8 py-4">
-        <h1 class="text-2xl font-bold text-white tracking-tight drop-shadow">{{ t('core.profiles.whoAreYou') }}</h1>
+      <div v-if="!pinOnly && !loading && bootstrap" class="relative z-10 flex-1 min-h-0 overflow-y-auto flex flex-col items-center justify-center py-4">
+        <div class="relative bg-white/15 dark:bg-white/8 border border-white/30 dark:border-white/10 rounded-2xl shadow-2xl backdrop-blur-xl nuc-surface-dark w-full max-w-sm p-8">
+          <NidSignUp admin @signed-in="onNidSignedIn" />
+        </div>
+      </div>
+
+      <div v-else-if="!pinOnly" class="relative z-10 flex-1 min-h-0 overflow-y-auto flex flex-col items-center justify-center gap-8 py-4">
+        <h1 class="text-2xl font-bold text-white tracking-tight drop-shadow">{{ view === 'nid' ? t('core.nid.title') : t('core.profiles.whoAreYou') }}</h1>
+        <div v-if="!loading && loginMode === 'both'" role="tablist" class="-mt-4 flex gap-1 p-1 rounded-full bg-white/10 border border-white/15">
+          <button v-for="tab in ['profiles', 'nid']" :key="tab" role="tab" :aria-selected="view === tab"
+            class="px-4 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer"
+            :class="view === tab ? 'bg-white/90 text-slate-900' : 'text-white/70 hover:text-white'"
+            @click="view = tab">
+            {{ tab === 'nid' ? t('core.nid.tab') : t('core.nid.tabProfiles') }}
+          </button>
+        </div>
         <div v-if="loading" class="text-sm text-white/50">{{ t('core.profiles.loading') }}</div>
+        <div v-else-if="view === 'nid'" class="flex flex-col items-center gap-4 w-full max-w-sm">
+          <div class="relative bg-white/15 dark:bg-white/8 border border-white/30 dark:border-white/10 rounded-2xl shadow-2xl backdrop-blur-xl nuc-surface-dark w-full p-8">
+            <NidLoginPanel :key="activeNotice || ''" :notice="activeNotice" @signed-in="onNidSignedIn" />
+          </div>
+          <button v-if="loginMode === 'profiles'" class="text-sm text-white/60 hover:text-white transition-colors cursor-pointer"
+            @click="view = 'profiles'; nidNotice = null">
+            {{ t('core.nid.backToProfiles') }}
+          </button>
+        </div>
         <div v-else class="flex flex-wrap justify-center gap-4 max-w-xl">
           <div v-for="p in profiles" :key="p._id"
             class="flex flex-col items-center gap-1.5 cursor-pointer"
@@ -285,6 +344,11 @@ async function createProfile() {
             </LiquidGlass>
           </div>
         </div>
+        <button v-if="!loading && view === 'profiles' && loginMode === 'profiles'"
+          class="-mt-4 text-sm text-white/60 hover:text-white transition-colors cursor-pointer"
+          @click="view = 'nid'">
+          {{ t('core.nid.signInWith') }}
+        </button>
       </div>
 
       <Transition name="fade">

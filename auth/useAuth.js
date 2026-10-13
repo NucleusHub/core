@@ -2,6 +2,11 @@ import { ref, readonly, computed } from 'vue'
 
 const profile = ref(null)
 const checked = ref(false)
+// Which account dialog AuthGuard shows: { kind: 'manage', tab } | { kind: 'upgrade' } | null.
+const accountPanel = ref(null)
+
+// 401s that mean "wrong secret", not "session gone".
+const CREDENTIAL_CODES = new Set(['invalid_credentials', 'wrong_pin'])
 
 function updateRecentProfiles(id) {
   try {
@@ -44,8 +49,10 @@ async function login(profileId, pin = null) {
     body: JSON.stringify({ profileId, pin: pin || undefined }),
   })
   if (!res.ok) {
-    const err = new Error((await res.json()).error || 'Login failed')
+    const body = await res.json().catch(() => ({}))
+    const err = new Error(body.error || 'Login failed')
     err.status = res.status
+    err.code = body.code
     throw err
   }
   const data = await res.json()
@@ -77,6 +84,54 @@ async function logout() {
   checked.value = true
 }
 
+async function nidPost(path, body) {
+  const res = await fetch(`/api/auth/nid/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body ?? {}),
+  })
+  const data = res.status === 204 ? null : await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const err = new Error(data?.error || `HTTP ${res.status}`)
+    err.status = res.status
+    err.code = data?.code
+    err.fields = data?.fields || null
+    throw err
+  }
+  return data
+}
+
+// Also refreshes after a pending upgrade: the profile now carries an unconfirmed account.
+async function signedIn(data) {
+  if (data?.profile) updateRecentProfiles(data.profile._id)
+  await checkSession()
+  return data
+}
+
+async function nidLogin(email, password) {
+  return signedIn(await nidPost('login', { email, password }))
+}
+
+// Resolves to { pending, email } when a confirmation mail went out, else { profile } with a live session.
+async function nidRegister({ handle, displayName, email, password }) {
+  return signedIn(await nidPost('register', { handle, displayName, email, password }))
+}
+
+async function upgrade({ handle, email, password, pin }) {
+  return signedIn(await nidPost('upgrade', { handle, email, password, pin }))
+}
+
+async function logoutAll() {
+  await nidPost('logout-all')
+  profile.value = null
+  checked.value = true
+}
+
+function openAccountPanel(kind, tab = 'profile') {
+  accountPanel.value = kind ? { kind, tab } : null
+}
+
 function handleUnauthorized() {
   profile.value = null
   checked.value = true
@@ -84,8 +139,16 @@ function handleUnauthorized() {
 
 async function authFetch(url, options = {}) {
   const res = await fetch(url, { credentials: 'include', ...options })
-  if (res.status === 401) handleUnauthorized()
+  if (res.status === 401 && !(await isCredentialError(res))) handleUnauthorized()
   return res
+}
+
+async function isCredentialError(res) {
+  try {
+    return CREDENTIAL_CODES.has((await res.clone().json()).code)
+  } catch {
+    return false
+  }
 }
 
 export function useAuth() {
@@ -93,10 +156,19 @@ export function useAuth() {
     profile: readonly(profile),
     checked: readonly(checked),
     isAuthenticated: computed(() => !!profile.value),
+    via: computed(() => profile.value?.via ?? null),
+    account: computed(() => profile.value?.account ?? null),
+    accountPanel: readonly(accountPanel),
     checkSession,
     login,
     completeTempLogin,
     logout,
+    nidLogin,
+    nidRegister,
+    nidPost,
+    upgrade,
+    logoutAll,
+    openAccountPanel,
     handleUnauthorized,
     authFetch,
   }

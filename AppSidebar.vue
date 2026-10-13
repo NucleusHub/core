@@ -46,8 +46,13 @@ const THEMES = [
 const { theme, isDark, setTheme } = useTheme()
 const logoUrl = computed(() => isDark.value ? logoDark : logoLight)
 
-const { profile } = useAuth()
+const { profile, account, openAccountPanel } = useAuth()
 const showSwitch = ref(false)
+
+function openAccount() {
+  emit('close')
+  openAccountPanel(account.value ? 'manage' : 'upgrade')
+}
 
 function openSwitch() {
   emit('close')
@@ -118,6 +123,11 @@ function launch(l) {
               <p class="text-xs text-slate-400 dark:text-slate-500">{{ t('core.sidebar.switchAccount') }}</p>
             </div>
             <ArrowsRightLeftIcon class="w-4 h-4 shrink-0" />
+          </button>
+          <button v-if="!profile.isGuest" @click="openAccount"
+            class="nuc-press cursor-pointer w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-white/8 transition-colors">
+            <Icon name="lock" class="w-4 h-4 shrink-0" />
+            {{ account ? t('core.account.manage') : t('core.account.upgrade') }}
           </button>
         </div>
 
