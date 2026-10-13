@@ -147,6 +147,8 @@ test('files are write-once with checksums', async () => {
   assert.equal(res.headers['x-content-sha256'], sha)
   assert.equal(res.headers['content-type'], 'image/png')
   assert.match(res.headers['cache-control'], /immutable/)
+  assert.equal(res.headers['x-content-type-options'], 'nosniff')
+  assert.match(res.headers['content-disposition'], /^attachment/)
   assert.equal((await auth(request(notes).head('/api/v1/files/img1'), token)).status, 200)
   assert.equal((await auth(request(notes).get('/api/v1/files/img1').set('If-None-Match', `"${sha}"`), token)).status, 304)
 
@@ -282,5 +284,30 @@ test('admin lists app data and drops only uninstalled apps', async () => {
     assert.equal((await request(gateway).get('/api/auth/settings/data')).status, 401)
   } finally {
     delete process.env.APPS_DIR
+  }
+})
+
+test('proxy strips cookies from the request and set-cookie from the response', async () => {
+  let seen
+  const upstream = http.createServer((req, res) => {
+    seen = req.headers
+    res.setHeader('Set-Cookie', 'sid=evil')
+    res.end('ok')
+  })
+  await new Promise(r => upstream.listen(0, '127.0.0.1', r))
+  const appsDir = mkd(path.join(tmpdir(), 'apps-'))
+  mkdirSync(path.join(appsDir, 'todo'))
+  writeFileSync(path.join(appsDir, 'todo', 'nucleus.app.json'), JSON.stringify({
+    id: 'todo', nucleusId: { clientId: 'todo' }, server: { service: '127.0.0.1', port: upstream.address().port },
+  }))
+  process.env.APPS_DIR = appsDir
+  try {
+    const res = await request(makeApp()).get('/api/v1/apps/todo/ping').set('Cookie', 'nid=secret').set('X-Forwarded-For', '6.6.6.6')
+    assert.equal(res.status, 200)
+    assert.equal(seen.cookie, undefined)
+    assert.equal(res.headers['set-cookie'], undefined)
+  } finally {
+    delete process.env.APPS_DIR
+    upstream.close()
   }
 })

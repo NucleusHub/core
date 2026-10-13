@@ -312,6 +312,8 @@ export function appDataRouter({ appId }) {
       'Last-Modified': new Date(f.uploadDate).toUTCString(),
       'Cache-Control': 'private, max-age=31536000, immutable',
       'Content-Security-Policy': "default-src 'none'; sandbox",
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Disposition': 'attachment',
     })
   }
 
