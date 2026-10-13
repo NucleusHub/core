@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import mongoose from 'mongoose'
 import jwt from 'jsonwebtoken'
 import request from 'supertest'
-import { startDb, stopDb, makeApp, createProfile, loginAs } from './helpers.js'
+import { startDb, stopDb, makeApp, createProfile, loginAs, loginAsNid } from './helpers.js'
 import { loadJwtSecret, jwtSecret } from '../lib/secret.js'
 import Session from '../models/Session.js'
 import express from 'express'
@@ -110,9 +110,7 @@ test('admin-only profile creation rejects a token without a session', async () =
     .set('Cookie', `nucleus_token=${forged}`).send({ name: 'Intruder' })
   assert.equal(res.status, 401)
 
-  const agent = request.agent(app)
-  await loginAs(agent, admin, '1234')
-  const ok = await agent.post('/api/auth/profiles').send({ name: 'Created' })
+  const ok = await request(app).post('/api/auth/profiles').set('Cookie', await loginAsNid(admin)).send({ name: 'Created' })
   assert.equal(ok.status, 201)
 })
 

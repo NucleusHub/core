@@ -13,6 +13,7 @@ export async function startDb() {
   mongod = await MongoMemoryServer.create()
   await mongoose.connect(mongod.getUri())
   await loadJwtSecret(mongoose.connection.db)
+  await Profile.init()
 }
 
 export async function stopDb() {

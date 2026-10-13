@@ -12,6 +12,27 @@ export function colorFromName(name) {
   return COLORS[Math.abs(h) % COLORS.length]
 }
 
+const identitySchema = new mongoose.Schema({
+  provider: { type: String, required: true },
+  subject:  { type: String, required: true },
+  email:    { type: String, default: null },
+  linkedAt: { type: Date, default: Date.now },
+}, { _id: false })
+
+// Display name lives in profile.name; handle/email are stored lowercased, *Lower kept for the unique indexes.
+const accountSchema = new mongoose.Schema({
+  handle:          { type: String, required: true },
+  handleLower:     { type: String, required: true },
+  email:           { type: String, required: true },
+  emailLower:      { type: String, required: true },
+  emailVerifiedAt: { type: Date, default: null },
+  passwordHash:    { type: String, default: null },
+  appearance:      { type: mongoose.Schema.Types.Mixed, default: null },
+  serverAccess:    { type: Boolean, default: false },
+  identities:      { type: [identitySchema], default: [] },
+  createdAt:       { type: Date, default: Date.now },
+}, { _id: false })
+
 const profileSchema = new mongoose.Schema({
   name:        { type: String, required: true, trim: true },
   role:        { type: String, enum: ['admin', 'user'], default: 'user' },
@@ -30,6 +51,20 @@ const profileSchema = new mongoose.Schema({
     lastSeenAt: { type: Date, default: null },
     optOut:     { type: Boolean, default: false },
   },
+  // Absent on plain profiles: grantServerAccess and the sparse indexes rely on that.
+  account:     { type: accountSchema, default: undefined },
 }, { timestamps: true })
+
+profileSchema.index({ 'account.handleLower': 1 }, { unique: true, sparse: true })
+profileSchema.index({ 'account.emailLower': 1 }, { unique: true, sparse: true })
+
+export const accountSummary = (profile) => profile?.account
+  ? {
+      handle: profile.account.handle,
+      email: profile.account.email,
+      emailVerified: !!profile.account.emailVerifiedAt,
+      appearance: profile.account.appearance ?? null,
+    }
+  : null
 
 export default mongoose.model('Profile', profileSchema)

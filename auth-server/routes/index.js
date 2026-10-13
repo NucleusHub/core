@@ -5,13 +5,16 @@ import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import mongoose from 'mongoose'
-import Profile, { colorFromName } from '../models/Profile.js'
+import Profile, { accountSummary, colorFromName } from '../models/Profile.js'
 import RegistryOverride from '../models/RegistryOverride.js'
 import UserOverride from '../models/UserOverride.js'
 import Group from '../models/Group.js'
 import GroupOverride from '../models/GroupOverride.js'
-import { requireAuth, requireAdmin, authenticate } from '../middleware/auth.js'
-import { issueSession, revokeSession } from '../lib/session.js'
+import { requireAuth, requireNidAdmin, authenticate } from '../middleware/auth.js'
+import { issueSession, revokeAllSessions, revokeSession } from '../lib/session.js'
+import { verifyPassword } from '../lib/password.js'
+import { getSettings } from '../models/AuthSettings.js'
+import { revokeEmailTokens } from '../models/EmailToken.js'
 import { serverCodeGate } from '../middleware/serverCode.js'
 import { resolveViewer, filterProfiles } from '../visibility.js'
 import { mountPluginRoutes } from '../serverPlugins.js'
@@ -63,6 +66,27 @@ function parseDataUrl(dataUrl) {
   }
 }
 
+const NID_REQUIRED = { error: 'Sign in with NucleusID to manage this server', code: 'nid_required' }
+
+// Admin power comes from the DB role plus a NucleusID session, never from the JWT role claim.
+async function adminPower(req) {
+  const actor = await Profile.findById(req.profile.profileId).select('role').lean()
+  if (actor?.role !== 'admin') return 'none'
+  return req.profile.via === 'nid' ? 'ok' : 'nid_required'
+}
+
+const denyOther = (res, power) => power === 'nid_required'
+  ? res.status(403).json(NID_REQUIRED)
+  : res.status(403).json({ error: 'Forbidden' })
+
+// PIN login refusals: server in NucleusID-only mode, or an account whose owner must use NucleusID.
+function pinLoginBlock(settings, profile) {
+  if (settings.userLogin === 'nid') return { error: 'This server uses NucleusID sign-in', code: 'nid_only' }
+  if (profile?.account && (!settings.pinAfterUpgrade || !profile.pin))
+    return { error: 'Sign in with NucleusID', code: 'nid_required' }
+  return null
+}
+
 function randomPin() {
   const chars = '0123456789ABCDEF'
   let s = ''
@@ -105,19 +129,16 @@ router.get('/profiles', serverCodeGate, async (req, res) => {
   }
 })
 
-// Allowed without auth only for first-run bootstrap (no admin yet).
-router.post('/profiles', async (req, res) => {
+// First run has no admin: it must be created with NucleusID, not as a profile.
+router.post('/profiles', async (_req, res, next) => {
   try {
-    const adminCount = await Profile.countDocuments({ role: 'admin', isGuest: false })
-    if (adminCount > 0) {
-      if (!req.cookies?.nucleus_token) return res.status(401).json({ error: 'Must be logged in as admin' })
-      const claim = await authenticate(req)
-      if (!claim) return res.status(401).json({ error: 'Invalid token' })
-      // Re-check role in DB: tokens live 30 days, so a demoted admin's token must not authorize this.
-      const actor = await Profile.findById(claim.profileId).select('role').lean()
-      if (!actor || actor.role !== 'admin') return res.status(403).json({ error: 'Admin required' })
-    }
-
+    if (await Profile.exists({ role: 'admin', isGuest: false })) return next()
+    res.status(409).json({ error: 'Create the admin account with NucleusID first', code: 'nid_bootstrap' })
+  } catch {
+    res.status(500).json({ error: 'Server error' })
+  }
+}, requireNidAdmin, async (req, res) => {
+  try {
     const { name, role = 'user', pin, emoji, color, pinTemporary, locale } = req.body
     if (!name?.trim()) return res.status(400).json({ error: 'Name is required' })
     if (pin !== undefined && pin !== null && pin !== '') {
@@ -126,7 +147,7 @@ router.post('/profiles', async (req, res) => {
     if (color !== undefined && color !== null && color !== '' && !/^#[0-9a-fA-F]{3,8}$/.test(color)) {
       return res.status(400).json({ error: 'Invalid color' })
     }
-    const safeRole = adminCount === 0 ? 'admin' : (role === 'admin' ? 'admin' : 'user')
+    const safeRole = role === 'admin' ? 'admin' : 'user'
     // A PIN-less admin would allow an unauthenticated takeover via the picker.
     if (safeRole === 'admin' && (pin === undefined || pin === null || pin === '')) {
       return res.status(400).json({ error: 'Admin profiles require a PIN' })
@@ -158,14 +179,15 @@ router.patch('/profiles/:id', requireAuth, async (req, res) => {
   try {
     if (!isValidId(req.params.id)) return res.status(400).json({ error: 'Invalid profile ID' })
     const isOwn = String(req.profile.profileId) === req.params.id
-    if (!isOwn && req.profile.role !== 'admin') return res.status(403).json({ error: 'Forbidden' })
+    const power = await adminPower(req)
+    if (!isOwn && power !== 'ok') return denyOther(res, power)
 
     const { name, emoji, color, role, locale, image } = req.body
     const update = {}
     if (name !== undefined) update.name = String(name).trim().slice(0, 64)
     if (emoji !== undefined) update.emoji = emoji ? String(emoji).slice(0, 8) : null
     if (color !== undefined) update.color = /^#[0-9a-fA-F]{3,8}$/.test(color) ? color : undefined
-    if (role !== undefined && req.profile.role === 'admin') update.role = role === 'admin' ? 'admin' : 'user'
+    if (role !== undefined && power === 'ok') update.role = role === 'admin' ? 'admin' : 'user'
     if (locale !== undefined) update.locale = locale ? String(locale).slice(0, 20) : null
     if (image !== undefined) {
       if (image === null || image === '') {
@@ -190,10 +212,10 @@ router.patch('/profiles/:id', requireAuth, async (req, res) => {
       }
     }
 
-    // Never promote a PIN-less profile: admins must always have a PIN.
+    // Never promote a PIN-less profile unless it signs in with NucleusID instead.
     if (update.role === 'admin') {
-      const target = await Profile.findById(req.params.id).select('pin').lean()
-      if (target && !target.pin) {
+      const target = await Profile.findById(req.params.id).select('pin account.handle').lean()
+      if (target && !target.pin && !target.account) {
         return res.status(400).json({ error: 'Set a PIN on this profile before making it an admin' })
       }
     }
@@ -201,7 +223,7 @@ router.patch('/profiles/:id', requireAuth, async (req, res) => {
     const profile = await Profile.findByIdAndUpdate(req.params.id, update, { new: true })
       .select('-pin -pinTempPlain -image').lean()
     if (!profile) return res.status(404).json({ error: 'Not found' })
-    res.json({ ...profile, hasImage: !!profile.imageUpdatedAt })
+    res.json({ ...profile, account: accountSummary(profile), hasImage: !!profile.imageUpdatedAt })
   } catch {
     res.status(500).json({ error: 'Server error' })
   }
@@ -227,14 +249,17 @@ router.patch('/profiles/:id/pin', requireAuth, async (req, res) => {
   try {
     if (!isValidId(req.params.id)) return res.status(400).json({ error: 'Invalid profile ID' })
     const isOwn = String(req.profile.profileId) === req.params.id
-    if (!isOwn && req.profile.role !== 'admin') return res.status(403).json({ error: 'Forbidden' })
+    if (!isOwn) {
+      const power = await adminPower(req)
+      if (power !== 'ok') return denyOther(res, power)
+    }
 
     const { pin, currentPin, temporary } = req.body
     if (pin !== undefined && pin !== null && pin !== '') {
       if (!isValidPin(pin)) return res.status(400).json({ error: 'PIN must be exactly 4 characters (0–9, A–F)' })
     }
 
-    const target = await Profile.findById(req.params.id).select('role pin isGuest')
+    const target = await Profile.findById(req.params.id).select('role pin isGuest account.handle')
     if (!target) return res.status(404).json({ error: 'Not found' })
     if (target.isGuest) return res.status(400).json({ error: 'Guest profiles cannot have a PIN' })
 
@@ -245,8 +270,8 @@ router.patch('/profiles/:id/pin', requireAuth, async (req, res) => {
     }
 
     const pinHash = pin ? await bcrypt.hash(String(pin).toUpperCase(), 10) : null
-    // Admins must keep a PIN; PIN-less means credential-free picker login.
-    if (!pinHash && target.role === 'admin') {
+    // Profile admins must keep a PIN (PIN-less means credential-free picker login); account admins use NucleusID.
+    if (!pinHash && target.role === 'admin' && !target.account) {
       return res.status(400).json({ error: 'Admins must keep a PIN' })
     }
     await Profile.findByIdAndUpdate(req.params.id, {
@@ -260,7 +285,7 @@ router.patch('/profiles/:id/pin', requireAuth, async (req, res) => {
   }
 })
 
-router.post('/profiles/:id/pin/reset', requireAdmin, async (req, res) => {
+router.post('/profiles/:id/pin/reset', requireNidAdmin, async (req, res) => {
   try {
     if (!isValidId(req.params.id)) return res.status(400).json({ error: 'Invalid profile ID' })
     const profile = await Profile.findById(req.params.id)
@@ -278,7 +303,7 @@ router.post('/profiles/:id/pin/reset', requireAdmin, async (req, res) => {
   }
 })
 
-router.get('/profiles/:id/pin-temp', requireAdmin, async (req, res) => {
+router.get('/profiles/:id/pin-temp', requireNidAdmin, async (req, res) => {
   try {
     if (!isValidId(req.params.id)) return res.status(400).json({ error: 'Invalid profile ID' })
     const profile = await Profile.findById(req.params.id).select('pin pinTemporary pinTempPlain').lean()
@@ -312,11 +337,15 @@ async function authorizeProfileDeletion(req) {
     if (!pin) return { status: 401, error: 'PIN required' }
     const ok = await bcrypt.compare(String(pin).toUpperCase(), admin.pin)
     if (!ok) return { status: 401, error: 'Wrong PIN' }
+  } else if (admin.account?.passwordHash) {
+    const { password } = req.body || {}
+    if (!password) return { status: 401, error: 'Password required' }
+    if (!(await verifyPassword(password, admin.account.passwordHash))) return { status: 401, error: 'Wrong password' }
   }
   return { target }
 }
 
-router.post('/profiles/:id/confirm-delete', requireAdmin, async (req, res) => {
+router.post('/profiles/:id/confirm-delete', requireNidAdmin, async (req, res) => {
   try {
     const r = await authorizeProfileDeletion(req)
     if (r.error) return res.status(r.status).json({ error: r.error })
@@ -326,7 +355,7 @@ router.post('/profiles/:id/confirm-delete', requireAdmin, async (req, res) => {
   }
 })
 
-router.delete('/profiles/:id', requireAdmin, async (req, res) => {
+router.delete('/profiles/:id', requireNidAdmin, async (req, res) => {
   try {
     const r = await authorizeProfileDeletion(req)
     if (r.error) return res.status(r.status).json({ error: r.error })
@@ -334,6 +363,8 @@ router.delete('/profiles/:id', requireAdmin, async (req, res) => {
     await Group.updateMany({ memberIds: id }, { $pull: { memberIds: id } })
     await UserOverride.deleteMany({ profileId: id })
     await r.target.deleteOne()
+    await revokeAllSessions(r.target._id)
+    await revokeEmailTokens(r.target._id)
     res.json({ ok: true })
   } catch {
     res.status(500).json({ error: 'Server error' })
@@ -352,6 +383,9 @@ router.post('/login', serverCodeGate, async (req, res) => {
 
     const profile = await Profile.findById(profileId)
     if (!profile) return res.status(404).json({ error: 'Profile not found' })
+
+    const blocked = pinLoginBlock(await getSettings(), profile)
+    if (blocked) return res.status(403).json(blocked)
 
     // Legacy guard: a PIN-less admin must never get a credential-free session.
     if (profile.role === 'admin' && !profile.pin) {
@@ -402,6 +436,8 @@ router.post('/login/set-pin', serverCodeGate, async (req, res) => {
 
     const profile = await Profile.findById(profileId)
     if (!profile) return res.status(404).json({ error: 'Profile not found' })
+    const blocked = pinLoginBlock(await getSettings(), profile)
+    if (blocked) return res.status(403).json(blocked)
     if (!profile.pinTemporary || !profile.pin) {
       return res.status(400).json({ error: 'No temporary PIN to replace' })
     }
@@ -428,8 +464,12 @@ router.post('/login/set-pin', serverCodeGate, async (req, res) => {
   }
 })
 
-router.post('/logout', requireAuth, async (req, res) => {
-  await revokeSession(req.profile.sid)
+// No requireAuth: a stale or invalid cookie must still be clearable.
+router.post('/logout', async (req, res) => {
+  try {
+    const claims = await authenticate(req)
+    if (claims) await revokeSession(claims.sid)
+  } catch { /* cookie is cleared regardless */ }
   res.clearCookie('nucleus_token', { path: '/' })
   res.json({ ok: true })
 })
@@ -442,7 +482,10 @@ router.get('/me', requireAuth, async (req, res) => {
       return res.status(401).json({ error: 'Profile not found' })
     }
     const { pin: _pin, pinTempPlain: _tmp, image: _img, ...safeProfile } = profile
-    res.json({ ...safeProfile, hasPin: !!profile.pin, pinTemporary: !!profile.pinTemporary, hasImage: !!profile.image })
+    res.json({
+      ...safeProfile, via: req.profile.via ?? null, account: accountSummary(profile),
+      hasPin: !!profile.pin, pinTemporary: !!profile.pinTemporary, hasImage: !!profile.image,
+    })
   } catch {
     res.status(500).json({ error: 'Server error' })
   }
@@ -461,7 +504,7 @@ router.get('/overrides', requireAuth, async (_req, res) => {
   }
 })
 
-router.patch('/overrides/:kind/:id', requireAdmin, async (req, res) => {
+router.patch('/overrides/:kind/:id', requireNidAdmin, async (req, res) => {
   try {
     const { kind, id } = req.params
     if (kind !== 'app' && kind !== 'widget' && kind !== 'plugin') return res.status(400).json({ error: 'Invalid kind' })
@@ -501,7 +544,7 @@ router.get('/effective-overrides', requireAuth, async (req, res) => {
   }
 })
 
-router.get('/users/:id/overrides', requireAdmin, async (req, res) => {
+router.get('/users/:id/overrides', requireNidAdmin, async (req, res) => {
   try {
     const all = await UserOverride.find({ profileId: req.params.id, disabled: true }).lean()
     res.json({
@@ -513,7 +556,7 @@ router.get('/users/:id/overrides', requireAdmin, async (req, res) => {
   }
 })
 
-router.patch('/users/:id/overrides/:kind/:itemId', requireAdmin, async (req, res) => {
+router.patch('/users/:id/overrides/:kind/:itemId', requireNidAdmin, async (req, res) => {
   try {
     const { id, kind, itemId } = req.params
     if (kind !== 'app' && kind !== 'widget') return res.status(400).json({ error: 'Invalid kind' })
@@ -623,7 +666,7 @@ router.get('/my-groups', requireAuth, async (req, res) => {
   }
 })
 
-router.get('/groups', requireAdmin, async (_req, res) => {
+router.get('/groups', requireNidAdmin, async (_req, res) => {
   try {
     const groups = await Group.find().sort({ name: 1 }).lean()
     res.json(groups.map(serializeGroup))
@@ -632,7 +675,7 @@ router.get('/groups', requireAdmin, async (_req, res) => {
   }
 })
 
-router.post('/groups', requireAdmin, async (req, res) => {
+router.post('/groups', requireNidAdmin, async (req, res) => {
   try {
     const name = String(req.body.name ?? '').trim()
     if (!name) return res.status(400).json({ error: 'Name required' })
@@ -647,7 +690,7 @@ router.post('/groups', requireAdmin, async (req, res) => {
   }
 })
 
-router.patch('/groups/:id', requireAdmin, async (req, res) => {
+router.patch('/groups/:id', requireNidAdmin, async (req, res) => {
   try {
     if (!isValidId(req.params.id)) return res.status(404).json({ error: 'Not found' })
     const update = {}
@@ -678,7 +721,7 @@ router.patch('/groups/:id', requireAdmin, async (req, res) => {
   }
 })
 
-router.delete('/groups/:id', requireAdmin, async (req, res) => {
+router.delete('/groups/:id', requireNidAdmin, async (req, res) => {
   try {
     if (!isValidId(req.params.id)) return res.status(404).json({ error: 'Not found' })
     const group = await Group.findByIdAndDelete(req.params.id)
@@ -690,7 +733,7 @@ router.delete('/groups/:id', requireAdmin, async (req, res) => {
   }
 })
 
-router.get('/groups/:id/overrides', requireAdmin, async (req, res) => {
+router.get('/groups/:id/overrides', requireNidAdmin, async (req, res) => {
   try {
     const all = await GroupOverride.find({ groupId: req.params.id, disabled: true }).lean()
     res.json({
@@ -702,7 +745,7 @@ router.get('/groups/:id/overrides', requireAdmin, async (req, res) => {
   }
 })
 
-router.patch('/groups/:id/overrides/:kind/:itemId', requireAdmin, async (req, res) => {
+router.patch('/groups/:id/overrides/:kind/:itemId', requireNidAdmin, async (req, res) => {
   try {
     const { id, kind, itemId } = req.params
     if (kind !== 'app' && kind !== 'widget') return res.status(400).json({ error: 'Invalid kind' })

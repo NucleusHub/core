@@ -3,7 +3,11 @@ import AuthSettings, { DEFAULT_LIMITS, getSettings, invalidateSettings, publicSe
 import Profile from '../models/Profile.js'
 import { requireNidAdmin } from '../middleware/auth.js'
 import { generateServerCode } from '../lib/serverCode.js'
-import { isHttps } from '../lib/session.js'
+import { isHttps, revokeAllSessions } from '../lib/session.js'
+import { hashPassword } from '../lib/password.js'
+import { revokeEmailTokens } from '../models/EmailToken.js'
+import { randomBytes } from 'node:crypto'
+import mongoose from 'mongoose'
 
 const router = Router()
 
@@ -147,6 +151,41 @@ router.post('/server-code', requireNidAdmin, async (req, res) => {
     await AuthSettings.updateOne({ _id: 'auth' }, { $set: { serverCode: code } }, { upsert: true, setDefaultsOnInsert: true })
     invalidateSettings()
     res.json(setup)
+  } catch {
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+router.get('/accounts', requireNidAdmin, async (_req, res) => {
+  try {
+    const rows = await Profile.find({ account: { $exists: true } })
+      .select('name role lastLoginAt account.handle account.email account.emailVerifiedAt account.createdAt')
+      .sort({ 'account.handleLower': 1 }).lean()
+    res.set('Cache-Control', 'no-store').json(rows.map(p => ({
+      _id: p._id, name: p.name, handle: p.account.handle, email: p.account.email,
+      verified: !!p.account.emailVerifiedAt, role: p.role, lastLoginAt: p.lastLoginAt, createdAt: p.account.createdAt,
+    })))
+  } catch {
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// For servers without mail: the admin hands the password over in person, which also vouches for the address.
+router.post('/accounts/:id/reset-password', requireNidAdmin, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid profile ID' })
+    const profile = await Profile.findOne({ _id: req.params.id, account: { $exists: true } }).select('account.emailVerifiedAt').lean()
+    if (!profile) return res.status(404).json({ error: 'Not found' })
+    const temporaryPassword = randomBytes(12).toString('base64url')
+    await Profile.updateOne({ _id: profile._id }, {
+      $set: {
+        'account.passwordHash': await hashPassword(temporaryPassword),
+        'account.emailVerifiedAt': profile.account.emailVerifiedAt || new Date(),
+      },
+    })
+    await revokeEmailTokens(profile._id, 'reset')
+    await revokeAllSessions(profile._id)
+    res.json({ temporaryPassword })
   } catch {
     res.status(500).json({ error: 'Server error' })
   }

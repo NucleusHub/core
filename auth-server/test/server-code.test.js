@@ -2,7 +2,7 @@ import { test, before, after, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import request from 'supertest'
 import mongoose from 'mongoose'
-import { startDb, stopDb, makeApp, createProfile, loginAs } from './helpers.js'
+import { startDb, stopDb, makeApp, createProfile, loginAs, loginAsNid } from './helpers.js'
 import { isServerCode, generateServerCode, sameCode, fingerprint, sign, unsign } from '../lib/serverCode.js'
 import AuthSettings, { invalidateSettings } from '../models/AuthSettings.js'
 import Profile from '../models/Profile.js'
@@ -143,7 +143,7 @@ test('entering the key while signed in grants account.serverAccess only to accou
   const withAccount = await createProfile({ name: 'acct' })
   await mongoose.connection.db.collection('profiles').updateOne({ _id: withAccount._id }, { $set: { account: { handle: 'acct' } } })
   const plainSession = sessionCookie(await loginAs(request(app), plain))
-  const acctSession = sessionCookie(await loginAs(request(app), withAccount))
+  const acctSession = await loginAsNid(withAccount)
   await setCode(code)
   assert.equal((await request(app).post('/api/v1/auth/server-code').set('Cookie', plainSession).send({ code })).status, 204)
   assert.equal((await request(app).post('/api/v1/auth/server-code').set('Cookie', acctSession).send({ code })).status, 204)
