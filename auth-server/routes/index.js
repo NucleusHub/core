@@ -98,8 +98,9 @@ router.get('/profiles', serverCodeGate, async (req, res) => {
   try {
     const all = await Profile.find().lean()
     const guests = all.filter(p => p.isGuest)
+    // A never-confirmed sign-up isn't anybody's yet, so it stays off the picker.
     const regular = all
-      .filter(p => !p.isGuest)
+      .filter(p => !p.isGuest && !(p.account && !p.account.emailVerifiedAt))
       .sort((a, b) => {
         if (!a.lastLoginAt && !b.lastLoginAt) return 0
         if (!a.lastLoginAt) return 1

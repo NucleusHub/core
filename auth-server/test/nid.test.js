@@ -9,6 +9,7 @@ import Session from '../models/Session.js'
 import EmailToken from '../models/EmailToken.js'
 import { setTransport } from '../lib/mailer.js'
 import { hashPassword, verifyPassword, checkPasswordStrength } from '../lib/password.js'
+import { claimBootstrap } from '../routes/nid.js'
 
 const PW = 'correct horse battery'
 const CODE = 'nucleus' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6' + 'home'
@@ -33,7 +34,8 @@ async function settings(patch) {
   await AuthSettings.updateOne({ _id: 'auth' }, { $set: patch }, { upsert: true })
   invalidateSettings()
 }
-const enableMail = () => settings({ 'mail.resendKey': 're_test_key', 'mail.from': 'Nucleus <hi@nucleus.test>' })
+const ORIGIN = 'https://home.example.org'
+const enableMail = () => settings({ 'mail.resendKey': 're_test_key', 'mail.from': 'Nucleus <hi@nucleus.test>', publicOrigin: ORIGIN })
 
 const cookieOf = (res) => (res.headers['set-cookie'] || []).find(c => c.startsWith('nucleus_token='))?.split(';')[0]
 const claimsOf = (cookie) => jwt.decode(decodeURIComponent(cookie.slice('nucleus_token='.length)))
@@ -139,7 +141,8 @@ test('with mail: pending until verified, login refused, verify signs in once', a
   assert.equal(sent[0].key, 're_test_key')
   assert.equal(sent[0].message.to, 'alice@example.com')
   assert.equal(sent[0].message.from, 'Nucleus <hi@nucleus.test>')
-  assert.match(sent[0].message.text, /http:\/\/127\.0\.0\.1:\d+\/\?verify=/)
+  assert.ok(sent[0].message.text.includes(`${ORIGIN}/?verify=`))
+  assert.match(sent[0].message.text, /password/)
 
   const early = await login({ email: 'alice@example.com', password: PW })
   assert.equal(early.status, 403)
@@ -148,23 +151,47 @@ test('with mail: pending until verified, login refused, verify signs in once', a
   const token = tokenIn(sent[0], 'verify')
   assert.ok(token)
   assert.equal((await EmailToken.findById(token)), null)
-  const v = await request(app).post('/api/auth/nid/verify').send({ token })
+  const missing = await request(app).post('/api/auth/nid/verify').send({ token })
+  assert.equal(missing.status, 400)
+  assert.equal(missing.body.code, 'invalid')
+  const wrong = await request(app).post('/api/auth/nid/verify').send({ token, password: 'wrong password!' })
+  assert.equal(wrong.status, 401)
+  assert.equal(wrong.body.code, 'invalid_credentials')
+  assert.equal(cookieOf(wrong), undefined)
+  const v = await request(app).post('/api/auth/nid/verify').send({ token, password: PW })
   assert.equal(v.status, 200)
   assert.equal(v.body.profile.account.emailVerified, true)
   assert.equal(claimsOf(cookieOf(v)).via, 'nid')
 
-  const again = await request(app).post('/api/auth/nid/verify').send({ token })
+  const again = await request(app).post('/api/auth/nid/verify').send({ token, password: PW })
   assert.equal(again.status, 400)
   assert.equal(again.body.code, 'token_invalid')
   assert.equal((await login({ email: 'alice@example.com', password: PW })).status, 200)
 })
 
-test('with mail: forwarded host builds the link', async () => {
+test('mail links ignore request host headers', async () => {
   await enableMail()
   await request(app).post('/api/auth/nid/register')
-    .set('X-Forwarded-Host', 'home.example.org').set('X-Forwarded-Proto', 'https')
+    .set('X-Forwarded-Host', 'evil.tld').set('Host', 'evil.tld').set('X-Forwarded-Proto', 'https')
     .send({ handle: 'alice', displayName: 'Alice', email: 'alice@example.com', password: PW })
-  assert.match(sent[0].message.text, /https:\/\/home\.example\.org\/\?verify=/)
+  assert.equal(sent.length, 1)
+  assert.ok(sent[0].message.text.includes(`${ORIGIN}/?verify=`))
+  assert.equal(sent[0].message.text.includes('evil.tld'), false)
+  assert.equal(sent[0].message.html.includes('evil.tld'), false)
+
+  await request(app).post('/api/auth/nid/verify').send({ token: tokenIn(sent[0], 'verify'), password: PW })
+  await request(app).post('/api/auth/nid/forgot').set('X-Forwarded-Host', 'evil.tld').send({ email: 'alice@example.com' })
+  await waitFor(() => sent.length > 1)
+  assert.ok(sent[1].message.text.includes(`${ORIGIN}/?reset=`))
+  assert.equal(sent[1].message.text.includes('evil.tld'), false)
+})
+
+test('mail without a public origin counts as not configured', async () => {
+  await settings({ 'mail.resendKey': 're_test_key', 'mail.from': 'Nucleus <hi@nucleus.test>' })
+  const res = await register()
+  assert.equal(res.status, 201)
+  assert.equal(res.body.profile.account.emailVerified, true)
+  assert.equal(sent.length, 0)
 })
 
 test('with mail: an unverified claim does not block a new sign-up', async () => {
@@ -236,9 +263,13 @@ test('upgrade binds an account to the logged-in profile and swaps the session', 
   const pinCookie = cookieOf(pinLogin)
   const oldSid = claimsOf(pinCookie).sid
 
-  assert.equal((await request(app).post('/api/auth/nid/upgrade').send({ handle: 'petr', email: 'p@x.com', password: PW })).status, 401)
+  assert.equal((await request(app).post('/api/auth/nid/upgrade').send({ handle: 'petr', email: 'p@x.com', password: PW, pin: '1234' })).status, 401)
+  const wrongPin = await request(app).post('/api/auth/nid/upgrade').set('Cookie', pinCookie)
+    .send({ handle: 'Petr', email: ' P@X.com', password: PW, pin: '9999' })
+  assert.equal(wrongPin.status, 401)
+  assert.equal(wrongPin.body.code, 'wrong_pin')
   const res = await request(app).post('/api/auth/nid/upgrade').set('Cookie', pinCookie)
-    .send({ handle: 'Petr', email: ' P@X.com', password: PW })
+    .send({ handle: 'Petr', email: ' P@X.com', password: PW, pin: '1234' })
   assert.equal(res.status, 200)
   assert.equal(String(res.body.profile._id), String(p._id))
   assert.equal(res.body.profile.account.email, 'p@x.com')
@@ -247,7 +278,7 @@ test('upgrade binds an account to the logged-in profile and swaps the session', 
   assert.equal((await Profile.findById(p._id).lean()).name, 'Petr')
 
   const again = await request(app).post('/api/auth/nid/upgrade').set('Cookie', cookieOf(res))
-    .send({ handle: 'petr2', email: 'p2@x.com', password: PW })
+    .send({ handle: 'petr2', email: 'p2@x.com', password: PW, pin: '1234' })
   assert.equal(again.status, 409)
   assert.equal(again.body.code, 'account_exists')
   assert.equal((await login({ email: 'p@x.com', password: PW })).status, 200)
@@ -260,21 +291,27 @@ test('upgrade: guests refused, duplicates 409, mail makes it pending', async () 
     .send({ handle: 'guest', email: 'g@x.com', password: PW })
   assert.equal(g.status, 403)
 
+  const pinless = await createProfile({ name: 'NoPin' })
+  const np = await request(app).post('/api/auth/nid/upgrade').set('Cookie', cookieOf(await loginAs(request(app), pinless)))
+    .send({ handle: 'nopin', email: 'np@x.com', password: PW })
+  assert.equal(np.status, 403)
+  assert.equal(np.body.code, 'pin_required')
+
   await register()
   const p = await createProfile({ name: 'Petr', pin: '1234' })
   const pinCookie = cookieOf(await loginAs(request(app), p, '1234'))
   const dup = await request(app).post('/api/auth/nid/upgrade').set('Cookie', pinCookie)
-    .send({ handle: 'petr', email: 'ALICE@example.com', password: PW })
+    .send({ handle: 'petr', email: 'ALICE@example.com', password: PW, pin: '1234' })
   assert.equal(dup.status, 409)
   assert.equal(dup.body.code, 'email_taken')
 
   await enableMail()
   const pending = await request(app).post('/api/auth/nid/upgrade').set('Cookie', pinCookie)
-    .send({ handle: 'petr', email: 'p@x.com', password: PW })
+    .send({ handle: 'petr', email: 'p@x.com', password: PW, pin: '1234' })
   assert.equal(pending.status, 201)
   assert.deepEqual(pending.body, { pending: true, email: 'p@x.com' })
   assert.equal((await request(app).get('/api/auth/me').set('Cookie', pinCookie)).status, 200)
-  const v = await request(app).post('/api/auth/nid/verify').send({ token: tokenIn(sent[0], 'verify') })
+  const v = await request(app).post('/api/auth/nid/verify').send({ token: tokenIn(sent[0], 'verify'), password: PW })
   assert.equal(v.status, 200)
   assert.equal(String(v.body.profile._id), String(p._id))
 })
@@ -308,7 +345,7 @@ test('forgot + reset: always 204, mail only for real accounts, reset signs every
   await enableMail()
   await register()
   const verifyToken = tokenIn(sent[0], 'verify')
-  const v = await request(app).post('/api/auth/nid/verify').send({ token: verifyToken })
+  const v = await request(app).post('/api/auth/nid/verify').send({ token: verifyToken, password: PW })
   const oldCookie = cookieOf(v)
   sent = []
 
@@ -339,7 +376,7 @@ test('tokens are stored hashed and expire', async () => {
   assert.notEqual(row._id, token)
   assert.equal(row.purpose, 'verify')
   await EmailToken.updateOne({ _id: row._id }, { expiresAt: new Date(Date.now() - 1000) })
-  const res = await request(app).post('/api/auth/nid/verify').send({ token })
+  const res = await request(app).post('/api/auth/nid/verify').send({ token, password: PW })
   assert.equal(res.status, 400)
   assert.equal(res.body.code, 'token_invalid')
 })
@@ -373,8 +410,14 @@ test('account: get, patch and delete', async () => {
   const badLook = await request(app).patch('/api/auth/nid/account').set('Cookie', cookie).send({ appearance: { accent: 'pink' } })
   assert.equal(badLook.status, 400)
 
+  const noPw = await request(app).patch('/api/auth/nid/account').set('Cookie', cookie).send({ email: 'AB@x.com' })
+  assert.equal(noPw.status, 400)
+  assert.equal(noPw.body.code, 'wrong_password')
+  const longName = await request(app).patch('/api/auth/nid/account').set('Cookie', cookie).send({ displayName: 'x'.repeat(65) })
+  assert.equal(longName.status, 400)
+
   const patched = await request(app).patch('/api/auth/nid/account').set('Cookie', cookie)
-    .send({ displayName: 'Alice B', handle: 'aliceb', email: 'AB@x.com', appearance: { accent: 'ember' } })
+    .send({ displayName: 'Alice B', handle: 'aliceb', email: 'AB@x.com', currentPassword: PW, appearance: { accent: 'ember' } })
   assert.equal(patched.status, 200)
   assert.equal(patched.body.handle, 'aliceb')
   assert.equal(patched.body.email, 'ab@x.com')
@@ -520,4 +563,94 @@ test('server key gates logged-out NID routes; passing it grants serverAccess', a
   const res = await register({}, agent)
   assert.equal(res.status, 201)
   assert.equal((await Profile.findById(res.body.profile._id).lean()).account.serverAccess, true)
+})
+
+test('with mail: email change stays pending, keeps the account safe, and swaps on confirm', async () => {
+  await enableMail()
+  await register()
+  await request(app).post('/api/auth/nid/verify').send({ token: tokenIn(sent[0], 'verify'), password: PW })
+  const cookie = cookieOf(await login({ email: 'alice@example.com', password: PW }))
+  sent = []
+
+  const res = await request(app).patch('/api/auth/nid/account').set('Cookie', cookie)
+    .send({ email: 'New@x.com', currentPassword: PW })
+  assert.equal(res.status, 200)
+  assert.equal(res.body.email, 'alice@example.com')
+  assert.equal(res.body.pendingEmail, 'new@x.com')
+  assert.equal(res.body.emailVerified, true)
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0].message.to, 'new@x.com')
+
+  // Old address still signs in, and the established account can't be wiped by a squatter.
+  assert.equal((await login({ email: 'alice@example.com', password: PW })).status, 200)
+  const squat = await register({ email: 'squat@x.com' })
+  assert.equal(squat.status, 409)
+  assert.equal(squat.body.code, 'handle_taken')
+  assert.equal(await Profile.countDocuments({ 'account.handle': 'alice' }), 1)
+
+  const token = tokenIn(sent[0], 'verify')
+  assert.equal((await request(app).post('/api/auth/nid/verify').send({ token, password: 'wrong password!' })).status, 401)
+  const v = await request(app).post('/api/auth/nid/verify').send({ token, password: PW })
+  assert.equal(v.status, 200)
+  assert.equal(v.body.profile.account.email, 'new@x.com')
+  const prof = await Profile.findOne({ 'account.handle': 'alice' }).lean()
+  assert.equal(prof.account.emailLower, 'new@x.com')
+  assert.equal(prof.account.pendingEmail ?? null, null)
+  assert.equal((await login({ email: 'new@x.com', password: PW })).status, 200)
+  assert.equal((await login({ email: 'alice@example.com', password: PW })).status, 401)
+})
+
+test('releasing a never-verified upgrade also revokes that profile sessions', async () => {
+  await enableMail()
+  const p = await createProfile({ name: 'Petr', pin: '1234' })
+  const pinCookie = cookieOf(await loginAs(request(app), p, '1234'))
+  const up = await request(app).post('/api/auth/nid/upgrade').set('Cookie', pinCookie)
+    .send({ handle: 'petr', email: 'p@x.com', password: PW, pin: '1234' })
+  assert.equal(up.status, 201)
+  assert.equal((await register({ handle: 'petr', email: 'other@x.com' })).status, 201)
+  assert.equal((await Profile.findById(p._id).lean()).account, undefined)
+  assert.equal((await request(app).get('/api/auth/me').set('Cookie', pinCookie)).status, 401)
+})
+
+test('IP-wide limit caps attempts across identifiers', async () => {
+  let last
+  for (let i = 0; i < 31; i++) last = await login({ email: `spray${i}@x.com`, password: 'wrong password!' })
+  assert.equal(last.status, 429)
+  assert.equal(last.body.code, 'rate_limited')
+  const reg = await register({ handle: 'fresh', email: 'fresh@x.com' })
+  assert.equal(reg.status, 201)
+})
+
+test('picker hides never-verified accounts', async () => {
+  await enableMail()
+  await register()
+  await createProfile({ name: 'plain' })
+  const res = await request(app).get('/api/auth/profiles')
+  assert.equal(res.status, 200)
+  assert.deepEqual(res.body.map(p => p.name), ['plain'])
+  await request(app).post('/api/auth/nid/verify').send({ token: tokenIn(sent[0], 'verify'), password: PW })
+  assert.equal((await request(app).get('/api/auth/profiles')).body.length, 2)
+})
+
+test('bootstrap: concurrent first sign-ups make exactly one admin', async () => {
+  const results = await Promise.all(['a1', 'a2', 'a3'].map(h => register({ handle: h, email: `${h}@x.com` })))
+  assert.deepEqual(results.map(r => r.status), [201, 201, 201])
+  assert.equal(results.filter(r => r.body.profile.role === 'admin').length, 1)
+  assert.equal(await Profile.countDocuments({ role: 'admin' }), 1)
+})
+
+test('bootstrap: a claim left by a deleted profile does not block the next first account', async () => {
+  const gone = await createProfile({ name: 'gone' })
+  await settings({ bootstrapAdminId: gone._id })
+  await Profile.deleteOne({ _id: gone._id })
+  const res = await register()
+  assert.equal(res.body.profile.role, 'admin')
+})
+
+test('bootstrap claim is compare-and-set: one winner, later claims lose', async () => {
+  await settings({})
+  const [a, b, c] = await Promise.all(['a', 'b', 'c'].map(name => createProfile({ name })))
+  const wins = await Promise.all([claimBootstrap(a._id), claimBootstrap(b._id)])
+  assert.equal(wins.filter(Boolean).length, 1)
+  assert.equal(await claimBootstrap(c._id), false)
 })

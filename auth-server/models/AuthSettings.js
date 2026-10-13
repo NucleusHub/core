@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import { mailEnabled } from '../lib/mailer.js'
 
 export const DEFAULT_LIMITS = {
   dataValueBytes: 262144,
@@ -22,6 +23,9 @@ const authSettingsSchema = new mongoose.Schema({
   signupOpen:      { type: Boolean, default: true },
   pinAfterUpgrade: { type: Boolean, default: true },
   serverCode:      str,
+  // Only source for links in mail; request headers are attacker-controlled.
+  publicOrigin:    str,
+  bootstrapAdminId: { type: mongoose.Schema.Types.ObjectId, default: null },
   mail: { resendKey: str, from: str },
   sso: {
     apple:  { clientId: str, teamId: str, keyId: str, privateKey: str },
@@ -62,7 +66,7 @@ export function publicSettings(s) {
     userLogin: s.userLogin,
     signupOpen: s.signupOpen,
     pinAfterUpgrade: s.pinAfterUpgrade,
-    mailEnabled: filled(s.mail),
+    mailEnabled: mailEnabled(s),
     sso: {
       apple: filled(s.sso?.apple),
       google: filled(s.sso?.google),

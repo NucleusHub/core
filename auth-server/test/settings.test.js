@@ -119,6 +119,9 @@ test('public settings expose flags only, plus hasAdmin and serverCodeRequired', 
     mail: { resendKey: 're_k', from: 'a@b.c' },
     sso: { github: { clientId: 'gh', clientSecret: 'ghs' } },
   })
+  // Mail links need a configured public origin, so without it mail counts as off.
+  assert.equal((await request(app).get('/api/auth/settings/public')).body.mailEnabled, false)
+  await request(app).patch('/api/auth/settings').set('Cookie', nidCookie).send({ publicOrigin: 'https://home.example.org' })
   let res = await request(app).get('/api/auth/settings/public')
   assert.equal(res.status, 200)
   assert.equal(res.body.userLogin, 'profiles')
@@ -135,4 +138,22 @@ test('public settings expose flags only, plus hasAdmin and serverCodeRequired', 
   assert.equal(res.status, 200)
   assert.equal(res.body.serverCodeRequired, true)
   assert.equal(JSON.stringify(res.body).includes((await getSettings()).serverCode), false)
+})
+
+test('publicOrigin is validated, never auto-filled, and GET suggests one from the request', async () => {
+  const get = await request(app).get('/api/auth/settings').set('Cookie', nidCookie)
+    .set('X-Forwarded-Host', 'my.server.ts.net').set('X-Forwarded-Proto', 'https')
+  assert.equal(get.body.publicOrigin, null)
+  assert.equal(get.body.suggestedOrigin, 'https://my.server.ts.net')
+
+  await request(app).patch('/api/auth/settings').set('Cookie', nidCookie).send({ signupOpen: true })
+  assert.equal((await getSettings()).publicOrigin, null)
+
+  for (const bad of ['ftp://x.org', 'https://x.org/path', 'https://x.org/?a=1', 'not a url', 42])
+    assert.equal((await request(app).patch('/api/auth/settings').set('Cookie', nidCookie).send({ publicOrigin: bad })).status, 400, String(bad))
+  const ok = await request(app).patch('/api/auth/settings').set('Cookie', nidCookie).send({ publicOrigin: 'https://My.Server.ts.net:8443/' })
+  assert.equal(ok.status, 200)
+  assert.equal(ok.body.publicOrigin, 'https://my.server.ts.net:8443')
+  await request(app).patch('/api/auth/settings').set('Cookie', nidCookie).send({ publicOrigin: null })
+  assert.equal((await getSettings()).publicOrigin, null)
 })

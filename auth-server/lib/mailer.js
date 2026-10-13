@@ -17,7 +17,9 @@ export function setTransport(fn) {
   transport = fn || resend
 }
 
-export const mailEnabled = (settings) => !!(settings?.mail?.resendKey && settings?.mail?.from)
+export const mailEnabled = (settings) => !!(settings?.mail?.resendKey && settings?.mail?.from && settings?.publicOrigin)
+
+const link = (settings, kind, token) => `${settings.publicOrigin}/?${kind}=${encodeURIComponent(token)}`
 
 const escape = (value) =>
   String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
@@ -33,20 +35,20 @@ ${lines.map((line) => `<p>${escape(line)}</p>`).join('\n')}
 }
 
 // No name in the greeting: it is whatever the sign-up form said, not necessarily the inbox owner.
-export function sendVerification(settings, { to, url }) {
+export function sendVerification(settings, { to, token }) {
   return send(settings, {
     to,
     subject: 'Confirm your Nucleus account',
     lines: [
       'Hi,',
-      'Confirm this address to finish setting up your NucleusID. The link works once and expires in 24 hours.',
+      'Confirm this address for your NucleusID. You will be asked for your password. The link works once and expires in 24 hours.',
       'If you did not sign up, ignore this email.',
     ],
-    action: { label: 'Confirm my email', url },
+    action: { label: 'Confirm my email', url: link(settings, 'verify', token) },
   })
 }
 
-export function sendPasswordReset(settings, { to, url }) {
+export function sendPasswordReset(settings, { to, token }) {
   return send(settings, {
     to,
     subject: 'Reset your Nucleus password',
@@ -55,6 +57,6 @@ export function sendPasswordReset(settings, { to, url }) {
       'Someone, hopefully you, asked to set a new password for your NucleusID. The link works once and expires in an hour.',
       'If it was not you, ignore this email. Your password has not changed.',
     ],
-    action: { label: 'Choose a new password', url },
+    action: { label: 'Choose a new password', url: link(settings, 'reset', token) },
   })
 }

@@ -26,6 +26,8 @@ const accountSchema = new mongoose.Schema({
   email:           { type: String, required: true },
   emailLower:      { type: String, required: true },
   emailVerifiedAt: { type: Date, default: null },
+  // New address awaiting confirmation; email/emailLower stay valid for login meanwhile.
+  pendingEmail:    { type: String, default: null },
   passwordHash:    { type: String, default: null },
   appearance:      { type: mongoose.Schema.Types.Mixed, default: null },
   serverAccess:    { type: Boolean, default: false },

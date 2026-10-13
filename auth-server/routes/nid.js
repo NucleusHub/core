@@ -1,12 +1,13 @@
 import { Router } from 'express'
+import bcrypt from 'bcryptjs'
 import Profile, { accountSummary, colorFromName } from '../models/Profile.js'
 import Group from '../models/Group.js'
 import UserOverride from '../models/UserOverride.js'
-import { getSettings } from '../models/AuthSettings.js'
-import { consumeEmailToken, issueEmailToken, recentlyIssued, revokeEmailTokens } from '../models/EmailToken.js'
+import AuthSettings, { getSettings } from '../models/AuthSettings.js'
+import { consumeEmailToken, issueEmailToken, peekEmailToken, recentlyIssued, revokeEmailTokens } from '../models/EmailToken.js'
 import { requireAuth } from '../middleware/auth.js'
 import { serverCodeGate } from '../middleware/serverCode.js'
-import { issueSession, isHttps, revokeAllSessions, revokeSession } from '../lib/session.js'
+import { issueSession, revokeAllSessions, revokeSession } from '../lib/session.js'
 import { cookiePassed, grantServerAccess } from '../lib/serverCode.js'
 import { checkPasswordStrength, hashPassword, needsRehash, verifyPassword } from '../lib/password.js'
 import { mailEnabled, sendPasswordReset, sendVerification } from '../lib/mailer.js'
@@ -49,7 +50,7 @@ function checkEmail(e) {
   return e.length <= 200 && EMAIL.test(e) ? null : 'That does not look like an email address.'
 }
 function checkDisplayName(d) {
-  return d && d.length <= 80 ? null : 'Enter a name of up to 80 characters.'
+  return d && d.length <= 64 ? null : 'Enter a name of up to 64 characters.'
 }
 
 function parseAccount(body, { displayName }) {
@@ -97,7 +98,7 @@ function newAccount({ handle: h, email }, passwordHash, verified) {
   }
 }
 
-// An unconfirmed claim owns neither address nor handle, so a typo or squatter can't block the real owner.
+// A never-confirmed claim owns neither address nor handle, so a typo or squatter can't block the real owner.
 async function releaseUnverified({ handle: h, email }, exceptId) {
   const or = []
   if (email) or.push({ 'account.emailLower': email })
@@ -106,20 +107,26 @@ async function releaseUnverified({ handle: h, email }, exceptId) {
   if (exceptId) filter._id = { $ne: exceptId }
   for (const p of await Profile.find(filter).select('_id pin lastLoginAt').lean()) {
     await revokeEmailTokens(p._id)
+    await revokeAllSessions(p._id)
     // Never-used sign-ups go entirely; an upgraded profile just loses its unconfirmed account.
     if (!p.pin && !p.lastLoginAt) await Profile.deleteOne({ _id: p._id, 'account.emailVerifiedAt': null })
     else await Profile.updateOne({ _id: p._id, 'account.emailVerifiedAt': null }, { $unset: { account: '' } })
   }
 }
 
-function origin(req) {
-  const host = (req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim()
-  return `${isHttps(req) ? 'https' : 'http'}://${host}`
+async function mailVerification(settings, profile, purpose = 'verify') {
+  const to = purpose === 'email-change' ? profile.account.pendingEmail : profile.account.emailLower
+  const token = await issueEmailToken(profile._id, purpose, to)
+  await sendVerification(settings, { to, token })
 }
 
-async function mailVerification(req, settings, profile) {
-  const token = await issueEmailToken(profile._id, 'verify', profile.account.emailLower)
-  await sendVerification(settings, { to: profile.account.email, url: `${origin(req)}/?verify=${token}` })
+// Compare-and-set on settings, so concurrent first sign-ups can't both become admin.
+export async function claimBootstrap(profileId) {
+  const doc = await AuthSettings.findById('auth').select('bootstrapAdminId').lean()
+  const prev = doc?.bootstrapAdminId ?? null
+  if (prev && await Profile.exists({ _id: prev })) return false
+  const r = await AuthSettings.updateOne({ _id: 'auth', bootstrapAdminId: prev }, { $set: { bootstrapAdminId: profileId } })
+  return r.modifiedCount === 1
 }
 
 const profileView = (p) => ({
@@ -129,6 +136,7 @@ const profileView = (p) => ({
 
 const accountView = (p) => ({
   ...accountSummary(p),
+  pendingEmail: p.account.pendingEmail ?? null,
   displayName: p.name,
   serverAccess: !!p.account.serverAccess,
   identities: (p.account.identities || []).map(({ provider, email, linkedAt }) => ({ provider, email, linkedAt })),
@@ -148,14 +156,13 @@ const hasAdmin = async () => !!(await Profile.exists({ role: 'admin', isGuest: f
 export function nidRouter() {
   const router = Router()
 
-  const limit = (name) => rateLimiter({
-    max: 10,
-    windowMs: WINDOW_MS,
-    key: (req) => `${name}|${req.ip}|${norm(req.body?.email ?? req.body?.handle) || req.profile?.profileId || ''}`,
-    onLimit: (res) => fail(res, 429, 'rate_limited', 'Too many attempts. Try again in 15 minutes.'),
-  })
+  const onLimit = (res) => fail(res, 429, 'rate_limited', 'Too many attempts. Try again in 15 minutes.')
+  const identifier = (req) => norm(req.body?.email ?? req.body?.handle) || String(req.body?.token ?? '').slice(0, 64) || req.profile?.profileId || ''
+  const limit = (name, key = identifier) => rateLimiter({ max: 10, windowMs: WINDOW_MS, key: (req) => `${name}|${req.ip}|${key(req)}`, onLimit })
+  // Caps one IP across identifiers: otherwise rotating emails means unlimited scrypt work and spraying.
+  const ipLimit = () => rateLimiter({ max: 30, windowMs: WINDOW_MS, onLimit })
 
-  router.post('/register', serverCodeGate, limit('register'), handle(async (req, res) => {
+  router.post('/register', serverCodeGate, ipLimit(), limit('register'), handle(async (req, res) => {
     const { values, fields } = parseAccount(req.body, { displayName: true })
     if (fields) return invalid(res, fields)
     const settings = await getSettings()
@@ -168,9 +175,9 @@ export function nidRouter() {
     let profile
     try {
       profile = await Profile.create({
-        name: values.displayName.slice(0, 64),
+        name: values.displayName,
         color: colorFromName(values.displayName),
-        role: (await hasAdmin()) ? 'user' : 'admin',
+        role: 'user',
         whatsNew: { lastSeenAt: new Date() },
         account: newAccount(values, passwordHash, verified),
       })
@@ -180,9 +187,14 @@ export function nidRouter() {
       throw err
     }
 
+    if (!(await hasAdmin()) && await claimBootstrap(profile._id)) {
+      await Profile.updateOne({ _id: profile._id }, { role: 'admin' })
+      profile.role = 'admin'
+    }
+
     if (!verified) {
       try {
-        await mailVerification(req, settings, profile)
+        await mailVerification(settings, profile)
       } catch (err) {
         console.error('[nid] verification mail failed', err)
         return fail(res, 503, 'mail_failed', 'We could not send the confirmation email. Try again in a minute.')
@@ -192,19 +204,43 @@ export function nidRouter() {
     res.status(201).json({ profile: profileView(await signIn(req, res, profile._id, settings)) })
   }))
 
-  router.post('/verify', serverCodeGate, handle(async (req, res) => {
-    const row = await consumeEmailToken(req.body?.token, 'verify')
+  // The link proves the address; the password proves this is the person who signed up.
+  router.post('/verify', serverCodeGate, ipLimit(), limit('verify'), handle(async (req, res) => {
+    const token = req.body?.token
+    const row = await peekEmailToken(token, ['verify', 'email-change'])
     if (!row) return tokenInvalid(res)
-    const ok = await Profile.updateOne(
-      { _id: row.profileId, 'account.emailLower': row.email },
-      { $set: { 'account.emailVerifiedAt': new Date() } },
-    )
-    if (!ok.matchedCount) return tokenInvalid(res)
+    const profile = await Profile.findById(row.profileId).lean()
+    const target = row.purpose === 'verify' ? profile?.account?.emailLower : profile?.account?.pendingEmail
+    if (!target || target !== row.email) return tokenInvalid(res)
+    if (profile.account.passwordHash) {
+      const password = req.body?.password
+      if (typeof password !== 'string' || !password) return invalid(res, { password: 'Enter your password.' })
+      if (!(await verifyPassword(password, profile.account.passwordHash)))
+        return fail(res, 401, 'invalid_credentials', 'That is not the password this account was created with.')
+    }
+    if (!(await consumeEmailToken(token, row.purpose))) return tokenInvalid(res)
+
+    const verifiedAt = profile.account.emailVerifiedAt || new Date()
+    if (row.purpose === 'verify') {
+      await Profile.updateOne({ _id: profile._id, 'account.emailLower': row.email }, { $set: { 'account.emailVerifiedAt': verifiedAt } })
+    } else {
+      await releaseUnverified({ email: row.email }, profile._id)
+      try {
+        await Profile.updateOne({ _id: profile._id, 'account.pendingEmail': row.email }, {
+          $set: { 'account.email': row.email, 'account.emailLower': row.email, 'account.emailVerifiedAt': verifiedAt },
+          $unset: { 'account.pendingEmail': '' },
+        })
+      } catch (err) {
+        if (!duplicateField(err)) throw err
+        await Profile.updateOne({ _id: profile._id }, { $unset: { 'account.pendingEmail': '' } })
+        return conflict(res, 'email')
+      }
+    }
     const settings = await getSettings()
     res.json({ profile: profileView(await signIn(req, res, row.profileId, settings)) })
   }))
 
-  router.post('/login', serverCodeGate, limit('login'), handle(async (req, res) => {
+  router.post('/login', serverCodeGate, ipLimit(), limit('login'), handle(async (req, res) => {
     const id = norm(req.body?.email ?? req.body?.handle)
     const password = req.body?.password
     if (!id) return invalid(res, { email: 'Enter your email or handle.' })
@@ -218,7 +254,7 @@ export function nidRouter() {
     const settings = await getSettings()
     if (mailEnabled(settings) && !profile.account.emailVerifiedAt) {
       if (!(await recentlyIssued(profile._id, 'verify')))
-        await mailVerification(req, settings, profile).catch((err) => console.error('[nid] verification mail failed', err))
+        await mailVerification(settings, profile).catch((err) => console.error('[nid] verification mail failed', err))
       return fail(res, 403, 'email_unverified', `Confirm your email first. We sent a link to ${profile.account.email}.`)
     }
     if (needsRehash(profile.account.passwordHash))
@@ -226,13 +262,17 @@ export function nidRouter() {
     res.json({ profile: profileView(await signIn(req, res, profile._id, settings)) })
   }))
 
-  router.post('/upgrade', requireAuth, limit('upgrade'), handle(async (req, res) => {
+  router.post('/upgrade', requireAuth, limit('upgrade', (req) => req.profile.profileId), handle(async (req, res) => {
     const { values, fields } = parseAccount(req.body, { displayName: false })
     if (fields) return invalid(res, fields)
     const current = await Profile.findById(req.profile.profileId).lean()
     if (!current) return fail(res, 401, 'unauthenticated', 'Profile not found')
     if (current.isGuest) return fail(res, 403, 'guest_profile', 'Guest profiles cannot have a NucleusID.')
     if (current.account) return fail(res, 409, 'account_exists', 'This profile already has a NucleusID.')
+    // Re-prove the PIN: an unlocked session alone must not be able to bind a new way in.
+    if (!current.pin) return fail(res, 403, 'pin_required', 'Set a PIN on this profile before upgrading it.')
+    if (!req.body?.pin || !(await bcrypt.compare(String(req.body.pin).toUpperCase(), current.pin)))
+      return fail(res, 401, 'wrong_pin', 'Wrong PIN')
 
     const settings = await getSettings()
     const verified = !mailEnabled(settings)
@@ -254,7 +294,7 @@ export function nidRouter() {
 
     if (!verified) {
       try {
-        await mailVerification(req, settings, profile)
+        await mailVerification(settings, profile)
       } catch (err) {
         console.error('[nid] verification mail failed', err)
         // Unbind so a retry isn't stuck on account_exists.
@@ -285,9 +325,8 @@ export function nidRouter() {
     res.status(204).end()
   }))
 
-  router.post('/forgot', serverCodeGate, limit('forgot'), handle(async (req, res) => {
+  router.post('/forgot', serverCodeGate, ipLimit(), limit('forgot'), handle(async (req, res) => {
     const email = norm(req.body?.email)
-    const base = origin(req)
     // Answer first, send later: neither the reply nor its timing says whether the address has an account.
     res.status(204).end()
     if (!email) return
@@ -298,14 +337,14 @@ export function nidRouter() {
         const profile = await Profile.findOne({ 'account.emailLower': email }).lean()
         if (!profile || await recentlyIssued(profile._id, 'reset')) return
         const token = await issueEmailToken(profile._id, 'reset', email)
-        await sendPasswordReset(settings, { to: profile.account.email, url: `${base}/?reset=${token}` })
+        await sendPasswordReset(settings, { to: profile.account.email, token })
       } catch (err) {
         console.error('[nid] reset mail failed', err)
       }
     })
   }))
 
-  router.post('/reset', serverCodeGate, handle(async (req, res) => {
+  router.post('/reset', serverCodeGate, ipLimit(), handle(async (req, res) => {
     const weak = checkPasswordStrength(req.body?.password)
     if (weak) return invalid(res, { password: weak })
     const row = await consumeEmailToken(req.body?.token, 'reset')
@@ -338,7 +377,7 @@ export function nidRouter() {
     res.set('Cache-Control', 'no-store').json(accountView(profile))
   }))
 
-  router.patch('/account', requireNid, handle(async (req, res) => {
+  router.patch('/account', requireNid, limit('account', (req) => req.profile.profileId), handle(async (req, res) => {
     const profile = await Profile.findById(req.profile.profileId).lean()
     if (!profile?.account) return fail(res, 404, 'no_account', 'This profile has no NucleusID.')
     const body = req.body && typeof req.body === 'object' ? req.body : {}
@@ -350,7 +389,7 @@ export function nidRouter() {
       const d = typeof body.displayName === 'string' ? body.displayName.trim() : ''
       const e = checkDisplayName(d)
       if (e) fields.displayName = e
-      else $set.name = d.slice(0, 64)
+      else $set.name = d
     }
     if ('handle' in body) {
       const h = norm(body.handle)
@@ -375,20 +414,33 @@ export function nidRouter() {
     if (Object.keys(fields).length) return invalid(res, fields)
 
     const settings = await getSettings()
-    const mustVerify = !!newEmail && mailEnabled(settings)
-    if (mustVerify) $set['account.emailVerifiedAt'] = null
-    await releaseUnverified({ handle: $set['account.handleLower'], email: newEmail }, profile._id)
+    const pending = !!newEmail && mailEnabled(settings)
+    const update = {}
+    if (newEmail) {
+      if (!(await verifyPassword(body.currentPassword, profile.account.passwordHash)))
+        return fail(res, 400, 'wrong_password', 'Enter your current password to change the email.', { fields: { currentPassword: 'Wrong password.' } })
+      if (await Profile.exists({ _id: { $ne: profile._id }, 'account.emailLower': newEmail, 'account.emailVerifiedAt': { $ne: null } }))
+        return conflict(res, 'email')
+      // With mail, the new address waits as pendingEmail until confirmed; login keeps using the old one.
+      if (pending) {
+        delete $set['account.email']
+        delete $set['account.emailLower']
+        $set['account.pendingEmail'] = newEmail
+      } else update.$unset = { 'account.pendingEmail': '' }
+    }
+    await releaseUnverified({ handle: $set['account.handleLower'], email: pending ? null : newEmail }, profile._id)
+    if (Object.keys($set).length) update.$set = $set
     try {
-      if (Object.keys($set).length) await Profile.updateOne({ _id: profile._id }, { $set })
+      if (Object.keys(update).length) await Profile.updateOne({ _id: profile._id }, update)
     } catch (err) {
       const field = duplicateField(err)
       if (field) return conflict(res, field)
       throw err
     }
     const updated = await Profile.findById(profile._id).lean()
-    if (mustVerify) {
-      await revokeEmailTokens(profile._id, 'verify')
-      await mailVerification(req, settings, updated).catch((err) => console.error('[nid] verification mail failed', err))
+    if (pending) {
+      await revokeEmailTokens(profile._id, 'email-change')
+      await mailVerification(settings, updated, 'email-change').catch((err) => console.error('[nid] verification mail failed', err))
     }
     res.json(accountView(updated))
   }))

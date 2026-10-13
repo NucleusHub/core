@@ -50,6 +50,29 @@ function validLimits(limits, partial) {
   return out
 }
 
+function validOrigin(value) {
+  if (value === null || value === '') return null
+  if (typeof value !== 'string') throw new BadRequest('publicOrigin must be a string')
+  let url
+  try {
+    url = new URL(value)
+  } catch {
+    throw new BadRequest('publicOrigin must be a URL like https://home.example.org')
+  }
+  if (!['http:', 'https:'].includes(url.protocol) || url.pathname !== '/' || url.search || url.hash || url.username)
+    throw new BadRequest('publicOrigin must be an http(s) origin without a path')
+  return url.origin
+}
+
+function requestOrigin(req) {
+  const host = (req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim()
+  try {
+    return new URL(`${isHttps(req) ? 'https' : 'http'}://${host}`).origin
+  } catch {
+    return null
+  }
+}
+
 // PATCH body → $set/$unset; masked secrets are echoes of what we sent, so they're skipped.
 function toUpdate(body) {
   const $set = {}
@@ -75,6 +98,7 @@ function toUpdate(body) {
       $set[`${group}.${field}`] = v?.trim() || null
     }
   }
+  if ('publicOrigin' in body) $set.publicOrigin = validOrigin(body.publicOrigin)
   if ('limits' in body) {
     for (const [k, v] of Object.entries(validLimits(body.limits, true))) $set[`limits.${k}`] = v
   }
@@ -114,9 +138,10 @@ router.get('/public', async (_req, res) => {
   }
 })
 
-router.get('/', requireNidAdmin, async (_req, res) => {
+// suggestedOrigin is only a hint for the UI; it's never saved without the admin confirming it.
+router.get('/', requireNidAdmin, async (req, res) => {
   try {
-    res.set('Cache-Control', 'no-store').json(masked(await getSettings()))
+    res.set('Cache-Control', 'no-store').json({ ...masked(await getSettings()), suggestedOrigin: requestOrigin(req) })
   } catch {
     res.status(500).json({ error: 'Server error' })
   }
