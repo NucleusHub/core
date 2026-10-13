@@ -1,9 +1,10 @@
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import TemplateModal from '../TemplateModal.vue'
+import { ref, reactive, computed } from 'vue'
 import { useI18n } from '../useI18n.js'
 import { useAuth } from './useAuth.js'
-import { nidError, HANDLE_RE, EMAIL_RE, MIN_PASSWORD } from './nidErrors.js'
+import { nidError, fieldErrors, HANDLE_RE, EMAIL_RE, MIN_PASSWORD } from './nidErrors.js'
+import NidDialog from './NidDialog.vue'
+import NidField from './NidField.vue'
 import PinInput from './PinInput.vue'
 import { Icon } from '../icons'
 
@@ -19,10 +20,6 @@ const error = ref(null)
 const busy = ref(false)
 const pinKey = ref(0)
 const done = ref(null)
-const handleRef = ref(null)
-
-// After children mount, so PinInput's own autofocus doesn't win.
-onMounted(() => handleRef.value?.focus())
 
 function validate() {
   const f = {}
@@ -48,63 +45,64 @@ async function submit() {
     })
     done.value = data?.pending ? { pending: true, email: data.email } : { pending: false }
   } catch (err) {
-    fields.value = err.code === 'invalid' ? (err.fields || {}) : {}
-    error.value = err.code === 'invalid' ? null : nidError(t, err)
+    fields.value = fieldErrors(t, err)
+    error.value = Object.keys(fields.value).length ? null : nidError(t, err)
     if (err.code === 'wrong_pin') { form.pin = ''; pinKey.value++ }
   } finally {
     busy.value = false
   }
 }
-
-const labelClass = 'block text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/35 mb-1.5'
-const inputClass = 'w-full text-sm rounded-xl border border-slate-300 dark:border-white/15 bg-white/70 dark:bg-white/5 text-slate-900 dark:text-white px-3 py-2 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 transition-colors'
 </script>
 
 <template>
-  <TemplateModal :show="true" header :title="t('core.account.upgradeTitle')" size="sm" z="z-[600]" body-class="px-5 sm:px-6 py-5" @cancel="emit('close')">
-    <div v-if="done" class="flex flex-col items-center gap-3 text-center py-4">
-      <div class="w-12 h-12 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 flex items-center justify-center">
-        <Icon name="check" class="w-6 h-6" :sw="2" />
-      </div>
-      <p class="text-sm text-slate-700 dark:text-white/80">
+  <NidDialog :title="t('core.account.upgradeTitle')" :subtitle="done || !hasPin ? '' : t('core.account.upgradeBody')" @close="emit('close')">
+    <div v-if="done" class="nid-done" role="status">
+      <span class="nid-done__mark"><Icon :name="done.pending ? 'send' : 'check'" :sw="1.9" /></span>
+      <h3 v-if="done.pending" class="nid-title">{{ t('core.nid.checkEmailTitle') }}</h3>
+      <p class="nid-body-text">
         {{ done.pending ? t('core.nid.checkEmailBody', { email: done.email }) : t('core.account.upgradeDone') }}
       </p>
-      <button class="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 cursor-pointer transition-colors" @click="emit('close')">
-        {{ t('core.button.close') }}
+      <button type="button" class="nid-btn nid-btn--primary nid-btn--block" data-autofocus @click="emit('close')">
+        {{ t('core.nid.continue') }}
       </button>
     </div>
 
-    <div v-else-if="!hasPin" class="flex flex-col gap-3 py-2">
-      <p class="text-sm text-slate-700 dark:text-white/80">{{ t('core.nid.err.pinRequired') }}</p>
+    <div v-else-if="!hasPin" class="nid-form">
+      <p class="nid-alert nid-alert--warn" role="status">
+        <Icon name="lock" class="nid-alert__icon" :sw="1.8" /><span>{{ t('core.nid.err.pinRequired') }}</span>
+      </p>
+      <button type="button" class="nid-btn nid-btn--quiet nid-btn--block" data-autofocus @click="emit('close')">{{ t('core.button.close') }}</button>
     </div>
 
-    <form v-else class="flex flex-col gap-4" novalidate @submit.prevent="submit">
-      <p class="text-sm text-slate-500 dark:text-white/60">{{ t('core.account.upgradeBody') }}</p>
-      <div>
-        <label :class="labelClass">{{ t('core.nid.field.handle') }}</label>
-        <input ref="handleRef" v-model="form.handle" :class="inputClass" autocomplete="username" autocapitalize="off" spellcheck="false" maxlength="39" />
-        <p v-if="fields.handle" class="mt-1 text-[11px] text-red-500">{{ fields.handle }}</p>
-      </div>
-      <div>
-        <label :class="labelClass">{{ t('core.nid.field.email') }}</label>
-        <input v-model="form.email" type="email" :class="inputClass" autocomplete="email" autocapitalize="off" maxlength="200" />
-        <p v-if="fields.email" class="mt-1 text-[11px] text-red-500">{{ fields.email }}</p>
-      </div>
-      <div>
-        <label :class="labelClass">{{ t('core.nid.field.password') }}</label>
-        <input v-model="form.password" type="password" :class="inputClass" :placeholder="t('core.nid.field.newPassword', { min: MIN_PASSWORD })"
-          autocomplete="new-password" maxlength="200" />
-        <p v-if="fields.password" class="mt-1 text-[11px] text-red-500">{{ fields.password }}</p>
-      </div>
-      <div class="flex flex-col items-center gap-1 pt-1">
-        <p class="text-xs text-slate-500 dark:text-white/60">{{ t('core.account.upgradePin') }}</p>
+    <form v-else class="nid-form" novalidate :aria-busy="busy" @submit.prevent="submit">
+      <NidField v-model="form.handle" prefix="@" :label="t('core.nid.field.handle')" :error="fields.handle"
+        :hint="t('core.nid.field.handleHint')" data-autofocus
+        autocomplete="username" autocapitalize="off" spellcheck="false" maxlength="39" />
+      <NidField v-model="form.email" type="email" :label="t('core.nid.field.email')" :error="fields.email"
+        autocomplete="email" autocapitalize="off" spellcheck="false" maxlength="200" />
+      <NidField v-model="form.password" type="password" :label="t('core.nid.field.password')" :error="fields.password"
+        :hint="t('core.nid.field.passwordShort', { min: MIN_PASSWORD })" autocomplete="new-password" maxlength="200" />
+      <div class="nid-field up-pin">
+        <span class="nid-label">{{ t('core.account.upgradePin') }}</span>
         <PinInput :key="pinKey" :error="fields.pin || null" @complete="pin => form.pin = pin" @incomplete="form.pin = ''" />
       </div>
-      <p v-if="error" class="text-xs text-red-500 text-center" role="alert">{{ error }}</p>
-      <button type="submit" :disabled="busy"
-        class="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors cursor-pointer">
+      <p v-if="error" class="nid-alert nid-alert--error" role="alert">
+        <Icon name="warning" class="nid-alert__icon" :sw="1.8" /><span>{{ error }}</span>
+      </p>
+      <button type="submit" class="nid-btn nid-btn--primary nid-btn--block" :disabled="busy">
+        <span v-if="busy" class="nid-spinner" aria-hidden="true" />
         {{ busy ? t('core.nid.working') : t('core.account.upgrade') }}
       </button>
     </form>
-  </TemplateModal>
+  </NidDialog>
 </template>
+
+<style scoped>
+.up-pin {
+  align-items: center;
+  padding: 16px 12px 14px;
+  border-radius: 16px;
+  background: var(--nid-raise);
+  box-shadow: inset 0 0 0 1px var(--nid-line-soft);
+}
+</style>

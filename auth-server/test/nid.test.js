@@ -234,6 +234,60 @@ test('login is rate limited per IP and identifier', async () => {
   assert.equal((await login({ email: 'other@example.com', password: PW })).status, 401)
 })
 
+test('picker login: profileId + password signs in via nid; same errors and limits', async () => {
+  const reg = await register()
+  const id = reg.body.profile._id
+  const plain = await createProfile({ name: 'plain', pin: '1111' })
+
+  const ok = await login({ profileId: id, password: PW })
+  assert.equal(ok.status, 200)
+  assert.equal(ok.body.profile._id, id)
+  assert.equal(claimsOf(cookieOf(ok)).via, 'nid')
+
+  for (const body of [{ profileId: id, password: 'wrong password!' }, { profileId: String(plain._id), password: PW }, { profileId: 'nope', password: PW }, { profileId: '64b000000000000000000000', password: PW }]) {
+    const r = await login(body)
+    assert.equal(r.status, 401, JSON.stringify(body))
+    assert.equal(r.body.code, 'invalid_credentials')
+    assert.equal(cookieOf(r), undefined)
+  }
+  assert.equal((await login({ profileId: id })).body.code, 'invalid')
+  assert.equal((await login({ password: PW })).body.code, 'invalid')
+
+  for (let i = 0; i < 10; i++) await login({ profileId: id, password: 'wrong password!' })
+  const limited = await login({ profileId: id, password: PW })
+  assert.equal(limited.status, 429)
+  assert.equal(limited.body.code, 'rate_limited')
+  assert.equal((await login({ email: 'alice@example.com', password: PW })).status, 200)
+})
+
+test('picker login: unverified email is refused, and the server key gate applies', async () => {
+  await enableMail()
+  const reg = await register()
+  assert.equal(reg.body.pending, true)
+  const p = await Profile.findOne({ 'account.handleLower': 'alice' }).lean()
+  const r = await login({ profileId: String(p._id), password: PW })
+  assert.equal(r.status, 403)
+  assert.equal(r.body.code, 'email_unverified')
+
+  await settings({ serverCode: CODE })
+  const gated = await login({ profileId: String(p._id), password: PW })
+  assert.equal(gated.status, 403)
+  assert.equal(gated.body.code, 'server_code_required')
+})
+
+test('public profile list says hasAccount and never leaks handle or email', async () => {
+  await register()
+  await createProfile({ name: 'plain', pin: '1111' })
+  const res = await request(app).get('/api/auth/profiles?picker=1')
+  assert.equal(res.status, 200)
+  const byName = Object.fromEntries(res.body.map(p => [p.name, p]))
+  assert.equal(byName.Alice.hasAccount, true)
+  assert.equal(byName.plain.hasAccount, false)
+  const text = JSON.stringify(res.body)
+  assert.equal(text.includes('alice@example.com'), false)
+  assert.equal(/"handle"|"email"|"account"/.test(text), false)
+})
+
 test('PIN login rules: nid_only mode, pinAfterUpgrade, PIN-less accounts', async () => {
   const plain = await createProfile({ name: 'plain', pin: '1111' })
   await settings({ userLogin: 'nid' })

@@ -1,6 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, onBeforeUnmount } from 'vue'
-import { LiquidGlass } from '@zaosoula/liquid-glass-vue/components'
+import { ref, computed, nextTick, onMounted, onUnmounted, onBeforeUnmount } from 'vue'
 import { useI18n } from '../useI18n.js'
 import { useAuth } from './useAuth.js'
 import { useRegistry } from '../useRegistry.js'
@@ -10,10 +9,14 @@ import PinInput from './PinInput.vue'
 import ProfileSettingsModal from './ProfileSettingsModal.vue'
 import NidLoginPanel from './NidLoginPanel.vue'
 import NidSignUp from './NidSignUp.vue'
+import NidCrest from './NidCrest.vue'
+import NidField from './NidField.vue'
 import { useAuthSettings } from './useAuthSettings.js'
+import { nidError, shake } from './nidErrors.js'
 import { Icon } from '../icons'
 import CloseIcon from '@core/assets/icons/close.svg?component'
 import ArrowLeftIcon from '@core/assets/icons/arrow-left.svg?component'
+import './nid.css'
 
 const props = defineProps({
   closeable: { type: Boolean, default: false },
@@ -24,7 +27,7 @@ const props = defineProps({
 const emit = defineEmits(['close'])
 
 const { t } = useI18n()
-const { login, completeTempLogin, profile: currentProfile, openAccountPanel } = useAuth()
+const { login, nidProfileLogin, completeTempLogin, profile: currentProfile, openAccountPanel } = useAuth()
 const { isPluginEnabled } = useRegistry()
 const { settings: authSettings, ensureLoaded: loadAuthSettings, refresh: refreshAuthSettings } = useAuthSettings()
 
@@ -33,6 +36,7 @@ const loginMode = computed(() => authSettings.value.userLogin)
 const bootstrap = computed(() => !authSettings.value.hasAdmin)
 const view = ref('profiles')
 const nidNotice = ref(null)
+const nidStart = ref('login')
 const activeNotice = computed(() => nidNotice.value || props.notice)
 
 function onNidSignedIn() {
@@ -49,11 +53,25 @@ function openAccount() {
   openAccountPanel(currentProfile.value?.account ? 'manage' : 'upgrade')
 }
 
+function showNid(start = 'login') {
+  nidStart.value = start
+  view.value = 'nid'
+}
+
 const profiles = ref([])
 const selected = ref(null)
+// 'password' for profiles with a NucleusID, 'pin' otherwise; the PIN stays reachable when the server allows it.
+const step = ref('pin')
 const pinError = ref(null)
 const pinShake = ref(false)
 const pinInputRef = ref(null)
+
+const password = ref('')
+const pwBusy = ref(false)
+const pwError = ref(null)
+const pwInfo = ref(null)
+const stepCard = ref(null)
+const pwField = ref(null)
 
 const settingNewPin = ref(false)
 const tempPinValue = ref('')
@@ -83,6 +101,13 @@ const pinOnly = ref(false)
 
 const settingsFor = ref(null)
 
+const canUsePin = computed(() => !!selected.value?.hasPin && authSettings.value.pinAfterUpgrade !== false && loginMode.value !== 'nid')
+const stepSub = computed(() => {
+  if (settingNewPin.value) return newPinStep.value === 'enter' ? t('core.profiles.chooseOwnPin') : t('core.profiles.confirmNewPin')
+  return step.value === 'password' ? t('core.profiles.enterPassword') : t('core.profiles.enterPin')
+})
+const launchers = computed(() => coreLaunchers.filter(l => isPluginEnabled(l.pluginId)))
+
 async function onSettingsUpdated() {
   await loadProfiles()
   const p = profiles.value.find(x => x._id === settingsFor.value?._id)
@@ -105,13 +130,18 @@ onMounted(async () => {
   }
 })
 
+function closeStep() {
+  if (settingNewPin.value) cancelNewPin()
+  else if (pinOnly.value) emit('close')
+  else back()
+}
+
 function onKeydown(e) {
   if (e.key !== 'Escape') return
   // TemplateModal handles its own Escape; don't also close the selector.
   if (settingsFor.value) return
   if (creating.value) { creating.value = false; return }
-  if (settingNewPin.value) { cancelNewPin(); return }
-  if (selected.value) { pinOnly.value ? emit('close') : back(); return }
+  if (selected.value) { closeStep(); return }
   if (props.closeable) emit('close')
 }
 
@@ -125,15 +155,43 @@ async function loadProfiles() {
   profiles.value = res.ok ? await res.json() : []
 }
 
+function pick(p) {
+  if (p._id === currentProfile.value?._id) return emit('close')
+  if (p.hasAccount || p.hasPin) return selectProfile(p)
+  loginNoPin(p)
+}
+
 function selectProfile(p) {
   selected.value = p
+  step.value = p.hasAccount ? 'password' : 'pin'
   pinError.value = null
   pinShake.value = false
+  resetPassword()
+  if (step.value === 'password') focusPassword()
+}
+
+function useStep(next) {
+  step.value = next
+  pinError.value = null
+  resetPassword()
+  if (next === 'password') focusPassword()
+}
+
+async function focusPassword() {
+  await nextTick()
+  pwField.value?.focus()
+}
+
+function resetPassword() {
+  password.value = ''
+  pwError.value = null
+  pwInfo.value = null
 }
 
 function back() {
   selected.value = null
   pinError.value = null
+  resetPassword()
   resetNewPin()
 }
 
@@ -149,6 +207,41 @@ function cancelNewPin() {
   pinError.value = null
   if (pinOnly.value) emit('close')
   else back()
+}
+
+function forgotPassword() {
+  back()
+  pinOnly.value = false
+  showNid('forgot')
+}
+
+function otherWays() {
+  back()
+  pinOnly.value = false
+  showNid('login')
+}
+
+async function submitPassword() {
+  if (pwBusy.value) return
+  pwError.value = null
+  pwInfo.value = null
+  if (!password.value) { pwError.value = t('core.nid.field.passwordRequired'); return }
+  pwBusy.value = true
+  try {
+    await nidProfileLogin(selected.value._id, password.value)
+    onNidSignedIn()
+  } catch (err) {
+    if (err.code === 'server_code_required') refreshAuthSettings()
+    if (err.code === 'email_unverified') pwInfo.value = t('core.nid.err.emailUnverified')
+    else {
+      pwError.value = err.code === 'invalid_credentials' ? t('core.nid.err.wrongPasswordPicker') : nidError(t, err)
+      shake(stepCard.value)
+    }
+    password.value = ''
+    focusPassword()
+  } finally {
+    pwBusy.value = false
+  }
 }
 
 async function submitPin(pin) {
@@ -173,10 +266,18 @@ async function doLogin(profileId, pin) {
     if (props.closeable) window.location.reload()
   } catch (err) {
     if (err.code === 'nid_required' || err.code === 'nid_only') {
+      const p = selected.value || profiles.value.find(x => x._id === profileId)
+      // A profile with an account can still sign in right here with its password.
+      if (p?.hasAccount && err.code === 'nid_required') {
+        if (!selected.value) selectProfile(p)
+        else useStep('password')
+        pwInfo.value = t('core.nid.err.nidRequired')
+        return
+      }
       back()
       pinOnly.value = false
       nidNotice.value = t('core.nid.err.nidRequired')
-      view.value = 'nid'
+      showNid()
       return
     }
     handlePinError(err)
@@ -213,7 +314,7 @@ function handlePinError(err) {
     pinError.value = t('core.profiles.tooManyAttempts')
     applyRateLimit(15 * 60 * 1000)
   } else {
-    pinError.value = err.message
+    pinError.value = err.code === 'wrong_pin' || err.status === 401 ? t('core.nid.err.wrongPin') : err.message
     pinShake.value = true
     setTimeout(() => {
       pinShake.value = false
@@ -243,166 +344,174 @@ async function createProfile() {
 
 <template>
   <Teleport to="body">
-    <div class="fixed inset-0 z-[500] flex flex-col p-4">
-
-      <div class="absolute inset-0 bg-black/15 backdrop-blur-2xl"
+    <div class="nid nid-stage ps">
+      <div class="nid-scrim"
         @click="closeable && (pinOnly || (!selected && !creating)) ? emit('close') : null" />
 
-      <div v-if="closeable && !selected && !creating" class="relative z-10 shrink-0 flex items-center justify-end gap-2.5">
+      <div v-if="closeable && !selected && !creating" class="ps-bar">
         <template v-if="currentProfile">
-          <button v-for="l in coreLaunchers.filter(l => isPluginEnabled(l.pluginId))" :key="l.pluginId + l.labelKey"
-            @click="launch(l)"
-            :title="t(l.labelKey)" :aria-label="t(l.labelKey)"
-            class="w-11 h-11 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-colors cursor-pointer">
-            <component :is="l.iconOutline || l.icon" v-if="l.iconOutline || l.icon" class="w-6 h-6" />
+          <button v-for="l in launchers" :key="l.pluginId + l.labelKey" type="button"
+            class="nid-pill-btn nid-pill-btn--round" :title="t(l.labelKey)" :aria-label="t(l.labelKey)" @click="launch(l)">
+            <component :is="l.iconOutline || l.icon" v-if="l.iconOutline || l.icon" class="ps-bar__icon" />
           </button>
         </template>
-        <button v-if="currentProfile && !currentProfile.isGuest" @click="openAccount"
-          class="h-11 px-4 flex items-center gap-2 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white text-sm font-medium transition-colors cursor-pointer">
-          <Icon name="lock" class="w-5 h-5" :sw="1.6" />
+        <button v-if="currentProfile && !currentProfile.isGuest" type="button" class="nid-pill-btn" @click="openAccount">
+          <NidCrest :size="22" />
           {{ currentProfile.account ? t('core.account.manage') : t('core.account.upgrade') }}
         </button>
-        <button v-if="currentProfile && !currentProfile.isGuest"
-          @click="settingsFor = { ...currentProfile }"
+        <button v-if="currentProfile && !currentProfile.isGuest" type="button" class="nid-pill-btn nid-pill-btn--round"
           :title="t('core.profiles.settings')" :aria-label="t('core.profiles.settings')"
-          class="w-11 h-11 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-colors cursor-pointer">
-          <Icon name="cog" class="w-6 h-6" :sw="1.6" />
+          @click="settingsFor = { ...currentProfile }">
+          <Icon name="cog" class="ps-bar__icon" :sw="1.6" />
         </button>
-        <button @click="emit('close')" :aria-label="t('core.button.close')"
-          class="w-11 h-11 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-colors cursor-pointer">
-          <CloseIcon width="16" height="16" />
+        <button type="button" class="nid-pill-btn nid-pill-btn--round" :aria-label="t('core.button.close')" @click="emit('close')">
+          <CloseIcon width="14" height="14" />
         </button>
       </div>
 
-      <div v-if="!pinOnly && !loading && bootstrap" class="relative z-10 flex-1 min-h-0 overflow-y-auto flex flex-col items-center justify-center py-4">
-        <div class="relative bg-white/15 dark:bg-white/8 border border-white/30 dark:border-white/10 rounded-2xl shadow-2xl backdrop-blur-xl nuc-surface-dark w-full max-w-sm p-8">
-          <NidSignUp admin @signed-in="onNidSignedIn" />
-        </div>
-      </div>
-
-      <div v-else-if="!pinOnly" class="relative z-10 flex-1 min-h-0 overflow-y-auto flex flex-col items-center justify-center gap-8 py-4">
-        <h1 class="text-2xl font-bold text-white tracking-tight drop-shadow">{{ view === 'nid' ? t('core.nid.title') : t('core.profiles.whoAreYou') }}</h1>
-        <div v-if="!loading && loginMode === 'both'" role="tablist" class="-mt-4 flex gap-1 p-1 rounded-full bg-white/10 border border-white/15">
-          <button v-for="tab in ['profiles', 'nid']" :key="tab" role="tab" :aria-selected="view === tab"
-            class="px-4 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer"
-            :class="view === tab ? 'bg-white/90 text-slate-900' : 'text-white/70 hover:text-white'"
-            @click="view = tab">
-            {{ tab === 'nid' ? t('core.nid.tab') : t('core.nid.tabProfiles') }}
-          </button>
-        </div>
-        <div v-if="loading" class="text-sm text-white/50">{{ t('core.profiles.loading') }}</div>
-        <div v-else-if="view === 'nid'" class="flex flex-col items-center gap-4 w-full max-w-sm">
-          <div class="relative bg-white/15 dark:bg-white/8 border border-white/30 dark:border-white/10 rounded-2xl shadow-2xl backdrop-blur-xl nuc-surface-dark w-full p-8">
-            <NidLoginPanel :key="activeNotice || ''" :notice="activeNotice" @signed-in="onNidSignedIn" />
+      <div v-if="!pinOnly && !loading && bootstrap" class="nid-stage__body">
+        <div class="nid-stage__center">
+          <div class="nid-card nid-rise">
+            <NidSignUp admin @signed-in="onNidSignedIn" />
           </div>
-          <button v-if="loginMode === 'profiles'" class="text-sm text-white/60 hover:text-white transition-colors cursor-pointer"
-            @click="view = 'profiles'; nidNotice = null">
-            {{ t('core.nid.backToProfiles') }}
-          </button>
         </div>
-        <div v-else class="flex flex-wrap justify-center gap-4 max-w-xl">
-          <div v-for="p in profiles" :key="p._id"
-            class="flex flex-col items-center gap-1.5 cursor-pointer"
-            @click="p._id === currentProfile?._id ? emit('close') : (p.hasPin ? selectProfile(p) : loginNoPin(p))">
-            <div class="relative overflow-hidden" style="width: 96px; height: 118px; border-radius: 20px">
-              <LiquidGlass
-                :style="{ position: 'absolute', top: '50%', left: '50%' }"
-                :corner-radius="20" padding="12px"
-                :displacement-scale="55" :blur-amount="0.08"
-                :saturation="140" :elasticity="0">
-                <div class="flex flex-col items-center gap-2" style="width: 72px">
-                  <AvatarCircle :profile="p" :size="64" />
-                  <span class="text-xs font-semibold text-white w-full truncate text-center" style="text-shadow: none">{{ p.name }}</span>
-                </div>
-              </LiquidGlass>
-              <span v-if="p.hasPin && p.pinTemporary && p._id !== currentProfile?._id"
-                class="absolute top-1 right-1 z-10 inline-flex items-center gap-0.5 text-[9px] font-bold tracking-wide px-1.5 py-0.5 rounded-md bg-amber-500/25 text-amber-300">
-                <Icon name="clock" class="w-2.5 h-2.5" :sw="2.5" />
-                PIN
-              </span>
-              <span v-else-if="p.hasPin && p._id !== currentProfile?._id"
-                class="absolute top-1 right-1 z-10 text-[9px] font-bold tracking-wide px-1.5 py-0.5 rounded-md bg-violet-500/20 text-violet-300">PIN</span>
+      </div>
+
+      <div v-else-if="!pinOnly" class="nid-stage__body">
+        <div class="nid-stage__center">
+          <p v-if="loading" class="nid-note" role="status">{{ t('core.profiles.loading') }}</p>
+
+          <template v-else>
+            <h1 v-if="view === 'profiles'" class="nid-stage__title">{{ t('core.profiles.whoAreYou') }}</h1>
+            <p v-if="view === 'profiles'" class="nid-stage__sub">{{ t('core.profiles.pickSub') }}</p>
+
+            <div v-if="loginMode === 'both'" role="tablist" class="nid-seg" :aria-label="t('core.nid.signInMethod')">
+              <button v-for="tab in ['profiles', 'nid']" :key="tab" type="button" role="tab" :aria-selected="view === tab"
+                class="nid-seg__btn" :class="{ 'is-on': view === tab }" @click="tab === 'nid' ? showNid() : (view = 'profiles')">
+                {{ tab === 'nid' ? t('core.nid.tab') : t('core.nid.tabProfiles') }}
+              </button>
             </div>
-            <span v-if="p._id === currentProfile?._id"
-              class="text-[11px] font-semibold tracking-wide px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 whitespace-nowrap">
-              {{ t('core.profiles.active') }}
-            </span>
-          </div>
 
-          <div class="relative overflow-hidden cursor-pointer"
-            style="width: 96px; height: 118px; border-radius: 20px"
-            @click="creating = true">
-            <LiquidGlass
-              :style="{ position: 'absolute', top: '50%', left: '50%' }"
-              :corner-radius="20" padding="12px"
-              :displacement-scale="55" :blur-amount="0.08"
-              :saturation="140" :elasticity="0">
-              <div class="flex flex-col items-center gap-2" style="width: 72px">
-                <div class="w-16 h-16 rounded-full border-2 border-dashed border-white/40 flex items-center justify-center text-3xl text-white/50">+</div>
-                <span class="text-xs font-semibold text-white/60 w-full text-center" style="text-shadow: none">{{ t('core.profiles.addProfile') }}</span>
+            <template v-if="view === 'nid'">
+              <div class="nid-card nid-rise">
+                <NidLoginPanel :key="(activeNotice || '') + nidStart" :notice="activeNotice" :initial-view="nidStart" @signed-in="onNidSignedIn" />
               </div>
-            </LiquidGlass>
-          </div>
-        </div>
-        <button v-if="!loading && view === 'profiles' && loginMode === 'profiles'"
-          class="-mt-4 text-sm text-white/60 hover:text-white transition-colors cursor-pointer"
-          @click="view = 'nid'">
-          {{ t('core.nid.signInWith') }}
-        </button>
-      </div>
-
-      <Transition name="fade">
-        <div v-if="selected"
-          class="absolute inset-0 z-20 flex items-center justify-center p-4"
-          @click.self="settingNewPin ? cancelNewPin() : (pinOnly ? emit('close') : back())">
-          <div class="relative bg-white/15 dark:bg-white/8 border border-white/30 dark:border-white/10 rounded-2xl shadow-2xl backdrop-blur-xl w-full max-w-xs p-8 flex flex-col items-center gap-5">
-            <button @click="settingNewPin ? cancelNewPin() : (pinOnly ? emit('close') : back())"
-              class="absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-colors cursor-pointer">
-              <CloseIcon width="12" height="12" />
-            </button>
-            <AvatarCircle :profile="selected" :size="76" />
-            <p class="font-semibold text-white">{{ selected.name }}</p>
-
-            <PinInput v-if="!settingNewPin" ref="pinInputRef" :error="pinError" :shake="pinShake" :disabled="rateLimited" @complete="submitPin" />
+              <button v-if="loginMode === 'profiles'" type="button" class="nid-link nid-link--muted ps-under"
+                @click="view = 'profiles'; nidNotice = null">
+                <ArrowLeftIcon width="14" height="14" />
+                {{ t('core.nid.backToProfiles') }}
+              </button>
+            </template>
 
             <template v-else>
-              <p class="text-xs text-white/60 text-center -mt-2">
-                {{ newPinStep === 'enter' ? t('core.profiles.chooseOwnPin') : t('core.profiles.confirmNewPin') }}
+              <ul class="ps-grid" role="list">
+                <li v-for="p in profiles" :key="p._id">
+                  <button type="button" class="ps-tile" :class="{ 'is-active': p._id === currentProfile?._id }"
+                    :aria-label="p.name" @click="pick(p)">
+                    <span class="ps-tile__avatar"><AvatarCircle :profile="p" :size="64" /></span>
+                    <span class="ps-tile__name">{{ p.name }}</span>
+                    <span v-if="p._id === currentProfile?._id" class="ps-chip ps-chip--active">{{ t('core.profiles.active') }}</span>
+                    <span v-else-if="p.hasAccount" class="ps-chip ps-chip--nid">
+                      <span class="ps-chip__dot" aria-hidden="true" />NucleusID
+                    </span>
+                    <span v-else-if="p.hasPin && p.pinTemporary" class="ps-chip ps-chip--temp">
+                      <Icon name="clock" class="ps-chip__icon" :sw="2.2" />PIN
+                    </span>
+                    <span v-else-if="p.hasPin" class="ps-chip">
+                      <Icon name="lock" class="ps-chip__icon" :sw="2.2" />PIN
+                    </span>
+                    <span v-else class="ps-chip ps-chip--open">{{ t('core.profiles.noLock') }}</span>
+                  </button>
+                </li>
+                <li>
+                  <button type="button" class="ps-tile ps-tile--add" @click="creating = true">
+                    <span class="ps-tile__plus" aria-hidden="true"><Icon name="plus" :sw="1.8" /></span>
+                    <span class="ps-tile__name">{{ t('core.profiles.addProfile') }}</span>
+                  </button>
+                </li>
+              </ul>
+              <button v-if="loginMode === 'profiles'" type="button" class="nid-btn nid-btn--quiet nid-btn--sm ps-under" @click="showNid()">
+                <NidCrest :size="20" />
+                {{ t('core.nid.signInWith') }}
+              </button>
+            </template>
+          </template>
+        </div>
+      </div>
+
+      <Transition name="nid-fade">
+        <div v-if="selected" class="ps-step" @click.self="closeStep">
+          <div class="nid-card nid-card--narrow nid-rise ps-step__card" ref="stepCard"
+            role="dialog" aria-modal="true" :aria-label="selected.name">
+            <button type="button" class="nid-icon-btn ps-step__corner" :aria-label="pinOnly ? t('core.button.close') : t('core.profiles.allProfiles')"
+              :title="pinOnly ? t('core.button.close') : t('core.profiles.allProfiles')" @click="closeStep">
+              <CloseIcon v-if="pinOnly || settingNewPin" class="nid-x" />
+              <ArrowLeftIcon v-else />
+            </button>
+
+            <div class="nid-head nid-head--center ps-step__head">
+              <span class="ps-ring"><AvatarCircle :profile="selected" :size="76" /></span>
+              <div>
+                <h2 class="nid-title">{{ selected.name }}</h2>
+                <p class="nid-sub">{{ stepSub }}</p>
+              </div>
+            </div>
+
+            <form v-if="step === 'password' && !settingNewPin" class="nid-form" novalidate :aria-busy="pwBusy" @submit.prevent="submitPassword">
+              <input type="text" class="nid-sr" autocomplete="username" :value="selected.name" tabindex="-1" aria-hidden="true" readonly />
+              <p v-if="pwInfo" class="nid-alert" role="status">
+                <Icon name="info" class="nid-alert__icon" :sw="1.8" /><span>{{ pwInfo }}</span>
               </p>
+              <NidField ref="pwField" v-model="password" type="password" :label="t('core.nid.field.password')" hide-label
+                :placeholder="t('core.nid.field.password')" :error="pwError" autocomplete="current-password" maxlength="200" />
+              <button type="submit" class="nid-btn nid-btn--primary nid-btn--block" :disabled="pwBusy">
+                <span v-if="pwBusy" class="nid-spinner" aria-hidden="true" />
+                {{ pwBusy ? t('core.nid.signingIn') : t('core.nid.signIn') }}
+              </button>
+              <div class="ps-step__links">
+                <button type="button" class="nid-link" @click="forgotPassword">{{ t('core.nid.forgotPassword') }}</button>
+                <button v-if="canUsePin" type="button" class="nid-link nid-link--muted" @click="useStep('pin')">{{ t('core.profiles.usePin') }}</button>
+                <button v-else type="button" class="nid-link nid-link--muted" @click="otherWays">{{ t('core.profiles.otherWays') }}</button>
+              </div>
+            </form>
+
+            <div v-else-if="!settingNewPin" class="ps-step__pin">
+              <PinInput ref="pinInputRef" :error="pinError" :shake="pinShake" :disabled="rateLimited" @complete="submitPin" />
+              <div v-if="selected.hasAccount" class="ps-step__links">
+                <button type="button" class="nid-link" @click="useStep('password')">{{ t('core.profiles.usePassword') }}</button>
+              </div>
+            </div>
+
+            <div v-else class="ps-step__pin">
               <PinInput :key="newPinStep" :error="pinError" @complete="onNewPin" />
-              <button @click="cancelNewPin"
-                class="flex items-center gap-1.5 text-sm text-white/60 hover:text-white transition-colors cursor-pointer">
+              <button type="button" class="nid-link nid-link--muted" @click="cancelNewPin">
                 <ArrowLeftIcon width="14" height="14" />
                 {{ t('core.button.back') }}
               </button>
-            </template>
+            </div>
           </div>
         </div>
       </Transition>
 
-      <Transition name="fade">
-        <div v-if="creating"
-          class="absolute inset-0 z-20 flex items-center justify-center p-4"
-          @click.self="creating = false">
-          <div class="relative bg-white/15 dark:bg-white/8 border border-white/30 dark:border-white/10 rounded-2xl shadow-2xl backdrop-blur-xl w-full max-w-xs p-8 flex flex-col items-center gap-4">
-            <button @click="creating = false"
-              class="absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-colors cursor-pointer">
-              <CloseIcon width="12" height="12" />
+      <Transition name="nid-fade">
+        <div v-if="creating" class="ps-step" @click.self="creating = false">
+          <form class="nid-card nid-card--narrow nid-rise ps-step__card" role="dialog" aria-modal="true" :aria-label="t('core.profiles.newProfile')"
+            novalidate @submit.prevent="createProfile">
+            <button type="button" class="nid-icon-btn ps-step__corner" :aria-label="t('core.button.close')" @click="creating = false">
+              <CloseIcon class="nid-x" />
             </button>
-            <h2 class="font-semibold text-white">{{ t('core.profiles.newProfile') }}</h2>
-            <input v-model="newName"
-              class="w-full px-3 py-2 rounded-xl bg-white/15 border border-white/25 text-white placeholder-white/40 outline-none focus:border-violet-400 text-sm transition-colors"
-              :placeholder="t('core.profiles.name')" maxlength="32" />
-            <div class="w-full flex flex-col items-center gap-1">
-              <p class="text-xs text-white/50">{{ t('core.profiles.pinOptional') }}</p>
-              <PinInput @complete="pin => newPin = pin" @incomplete="newPin = ''" />
+            <div class="nid-head nid-head--center ps-step__head">
+              <h2 class="nid-title">{{ t('core.profiles.newProfile') }}</h2>
             </div>
-            <p v-if="createError" class="text-xs text-red-400">{{ createError }}</p>
-            <button @click="createProfile"
-              class="w-full py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold transition-colors cursor-pointer">
-              {{ t('core.profiles.create') }}
-            </button>
-          </div>
+            <div class="nid-form">
+              <NidField v-model="newName" :label="t('core.profiles.name')" :error="createError" maxlength="32" autocomplete="off" />
+              <div class="nid-field">
+                <span class="nid-label">{{ t('core.profiles.pinOptional') }}</span>
+                <PinInput @complete="pin => newPin = pin" @incomplete="newPin = ''" />
+              </div>
+              <button type="submit" class="nid-btn nid-btn--primary nid-btn--block">{{ t('core.profiles.create') }}</button>
+            </div>
+          </form>
         </div>
       </Transition>
 
@@ -418,6 +527,165 @@ async function createProfile() {
 </template>
 
 <style scoped>
-.fade-enter-active, .fade-leave-active { transition: opacity 0.15s ease; }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
+.ps-bar {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ps-bar__icon { width: 22px; height: 22px; }
+
+.ps-under { margin-top: 4px; }
+
+/* ── Profile tiles ───────────────────────────────────────────────────────── */
+
+.ps-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 14px;
+  max-width: 48rem;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ps-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 8.25rem;
+  padding: 18px 10px 14px;
+  border: 0;
+  border-radius: 22px;
+  font: inherit;
+  color: var(--nid-ink-hi);
+  background: var(--nid-tile);
+  box-shadow: inset 0 0 0 1px var(--nid-line), 0 18px 40px -28px rgba(24, 16, 60, 0.55);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  backdrop-filter: blur(18px) saturate(150%);
+  cursor: pointer;
+  transition: transform 0.24s var(--nid-ease), background-color 0.16s var(--nid-ease-std), box-shadow 0.24s var(--nid-ease);
+}
+
+.ps-tile:hover {
+  transform: translateY(-3px);
+  background: var(--nid-tile-hover);
+  box-shadow: inset 0 0 0 1px var(--nid-accent-line), 0 26px 50px -28px rgba(124, 58, 237, 0.55);
+}
+
+.ps-tile:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--nid-focus), 0 0 0 4px var(--nid-halo);
+}
+
+.ps-tile.is-active { box-shadow: inset 0 0 0 1px var(--nid-ok-line), 0 18px 40px -28px rgba(24, 16, 60, 0.55); }
+
+.ps-tile__avatar { display: grid; place-items: center; }
+
+.ps-tile__name {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ps-tile--add { color: var(--nid-ink-3); }
+.ps-tile--add .ps-tile__name { font-weight: 500; }
+
+.ps-tile__plus {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  color: var(--nid-ink-3);
+  box-shadow: inset 0 0 0 1.5px var(--nid-control);
+  transition: color 0.16s var(--nid-ease-std), box-shadow 0.16s var(--nid-ease-std);
+}
+
+.ps-tile__plus svg { width: 26px; height: 26px; }
+.ps-tile--add:hover .ps-tile__plus { color: var(--nid-accent-ink); box-shadow: inset 0 0 0 1.5px var(--nid-accent); }
+
+.ps-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--nid-ink-3);
+  background: var(--nid-quiet);
+  white-space: nowrap;
+}
+
+.ps-chip__icon { width: 11px; height: 11px; }
+.ps-chip--nid { color: var(--nid-accent-ink); background: var(--nid-accent-bg); }
+.ps-chip__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--nid-accent); box-shadow: 0 0 6px var(--nid-accent); }
+.ps-chip--temp { color: var(--nid-warn-ink); background: var(--nid-warn-bg); }
+.ps-chip--active { color: var(--nid-ok-ink); background: var(--nid-ok-bg); }
+.ps-chip--open { font-weight: 500; }
+
+/* ── Step card (password / PIN / new profile) ────────────────────────────── */
+
+.ps-step {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  overflow-y: auto;
+  background: var(--nid-scrim);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+.ps-step__card { margin: auto 0; }
+
+.ps-step__corner { position: absolute; top: 14px; left: 14px; }
+
+.ps-step__head { margin-top: 6px; }
+
+.ps-ring {
+  display: grid;
+  place-items: center;
+  padding: 4px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px var(--nid-accent-line), 0 18px 40px -16px rgba(168, 85, 247, 0.65);
+}
+
+.ps-step__links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.ps-step__pin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+@media (max-width: 420px) {
+  .ps-grid { gap: 10px; }
+  .ps-tile { width: calc(50vw - 30px); max-width: 8.25rem; }
+}
 </style>

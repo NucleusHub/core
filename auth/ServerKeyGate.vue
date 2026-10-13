@@ -2,7 +2,11 @@
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from '../useI18n.js'
 import { useAuthSettings } from './useAuthSettings.js'
+import { shake } from './nidErrors.js'
 import { Icon } from '../icons'
+import NidCrest from './NidCrest.vue'
+import NidField from './NidField.vue'
+import './nid.css'
 
 const { t } = useI18n()
 const { submitServerCode } = useAuthSettings()
@@ -17,20 +21,26 @@ const ERRORS = {
 const code = ref('')
 const busy = ref(false)
 const error = ref(null)
-const inputRef = ref(null)
+const card = ref(null)
+const field = ref(null)
 const trimmed = computed(() => code.value.trim())
 
-onMounted(() => inputRef.value?.focus())
+onMounted(() => field.value?.focus())
+
+function fail(key) {
+  error.value = t(key)
+  shake(card.value)
+}
 
 async function submit() {
   if (busy.value || !trimmed.value) return
   error.value = null
-  if (!FORMAT.test(trimmed.value)) { error.value = t('core.serverKey.invalid'); return }
+  if (!FORMAT.test(trimmed.value)) return fail('core.serverKey.invalid')
   busy.value = true
   try {
     await submitServerCode(trimmed.value)
   } catch (err) {
-    error.value = t(ERRORS[err.code] || (err instanceof TypeError ? 'core.serverKey.offline' : 'core.serverKey.failed'))
+    fail(ERRORS[err.code] || (err instanceof TypeError ? 'core.serverKey.offline' : 'core.serverKey.failed'))
   } finally {
     busy.value = false
   }
@@ -39,26 +49,39 @@ async function submit() {
 
 <template>
   <Teleport to="body">
-    <div class="fixed inset-0 z-[500] flex items-center justify-center p-4">
-      <div class="absolute inset-0 bg-black/15 backdrop-blur-2xl" />
-      <form class="relative bg-white/15 dark:bg-white/8 border border-white/30 dark:border-white/10 rounded-2xl shadow-2xl backdrop-blur-xl nuc-surface-dark w-full max-w-sm p-8 flex flex-col items-center gap-4"
-        @submit.prevent="submit">
-        <div class="w-12 h-12 rounded-full bg-violet-500/20 text-violet-200 flex items-center justify-center">
-          <Icon name="lock" class="w-6 h-6" :sw="1.6" />
+    <div class="nid nid-stage">
+      <div class="nid-scrim" />
+      <div class="nid-stage__body">
+        <div class="nid-stage__center">
+          <form ref="card" class="nid-card nid-rise" novalidate :aria-busy="busy" @submit.prevent="submit">
+            <div class="nid-head">
+              <NidCrest />
+              <div class="nid-head__text">
+                <h1 class="nid-title">{{ t('core.serverKey.title') }}</h1>
+              </div>
+            </div>
+            <div class="nid-form">
+              <p class="nid-body-text">{{ t('core.serverKey.body') }}</p>
+              <NidField ref="field" v-model="code" :label="t('core.serverKey.label')" code
+                :placeholder="t('core.serverKey.placeholder')" :error="error"
+                autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="64" />
+              <button type="submit" class="nid-btn nid-btn--primary nid-btn--block" :disabled="busy || !trimmed">
+                <span v-if="busy" class="nid-spinner" aria-hidden="true" />
+                {{ busy ? t('core.serverKey.checking') : t('core.serverKey.continue') }}
+              </button>
+              <p class="nid-note nid-key-hint">
+                <Icon name="info" class="nid-key-hint__icon" :sw="1.8" />
+                <span>{{ t('core.serverKey.hint') }}</span>
+              </p>
+            </div>
+          </form>
         </div>
-        <h1 class="text-lg font-bold text-white text-center">{{ t('core.serverKey.title') }}</h1>
-        <p class="text-sm text-white/65 text-center -mt-2">{{ t('core.serverKey.body') }}</p>
-        <label class="sr-only" for="nucleus-server-key">{{ t('core.serverKey.label') }}</label>
-        <input id="nucleus-server-key" ref="inputRef" v-model="code"
-          class="w-full px-3 py-2 rounded-xl bg-white/15 border border-white/25 text-white placeholder-white/40 outline-none focus:border-violet-400 text-sm font-mono transition-colors"
-          :placeholder="t('core.serverKey.placeholder')"
-          autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="64" />
-        <p v-if="error" class="text-xs text-red-300 text-center" role="alert">{{ error }}</p>
-        <button type="submit" :disabled="busy || !trimmed"
-          class="w-full py-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors cursor-pointer">
-          {{ busy ? t('core.serverKey.checking') : t('core.serverKey.continue') }}
-        </button>
-      </form>
+      </div>
     </div>
   </Teleport>
 </template>
+
+<style scoped>
+.nid-key-hint { display: flex; gap: 8px; align-items: flex-start; }
+.nid-key-hint__icon { flex: none; width: 15px; height: 15px; margin-top: 2px; }
+</style>

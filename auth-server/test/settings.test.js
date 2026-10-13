@@ -176,6 +176,25 @@ test('GET server-code returns the current setup without rotating', async () => {
   assert.equal((await getSettings()).serverCode, rotated.body.code)
 })
 
+test('setup links use publicOrigin when set, the request host otherwise', async () => {
+  await request(app).patch('/api/auth/settings').set('Cookie', nidCookie).send({ publicOrigin: 'https://home.example.org:8443' })
+  let res = await request(app).post('/api/auth/settings/server-code').set('Cookie', nidCookie)
+    .set('Host', 'localhost').send({ action: 'rotate' })
+  const { code } = res.body
+  assert.deepEqual(res.body.file, { scheme: 'https', host: 'home.example.org', port: 8443, path: '/api/v1/oauth/metadata', code })
+  assert.equal(res.body.links.todo, `com.nucleushome.todo://server?scheme=https&host=home.example.org&port=8443&path=%2Fapi%2Fv1%2Foauth%2Fmetadata&code=${code}`)
+  res = await request(app).get('/api/auth/settings/server-code').set('Cookie', nidCookie).set('Host', 'localhost')
+  assert.deepEqual(res.body.file, { scheme: 'https', host: 'home.example.org', port: 8443, path: '/api/v1/oauth/metadata', code })
+
+  await request(app).patch('/api/auth/settings').set('Cookie', nidCookie).send({ publicOrigin: 'https://home.example.org' })
+  res = await request(app).get('/api/auth/settings/server-code').set('Cookie', nidCookie).set('Host', 'localhost')
+  assert.deepEqual(res.body.file, { scheme: 'https', host: 'home.example.org', path: '/api/v1/oauth/metadata', code })
+
+  await request(app).patch('/api/auth/settings').set('Cookie', nidCookie).send({ publicOrigin: null })
+  res = await request(app).get('/api/auth/settings/server-code').set('Cookie', nidCookie).set('Host', 'nucleus.example:8080')
+  assert.deepEqual(res.body.file, { scheme: 'http', host: 'nucleus.example', port: 8080, path: '/api/v1/oauth/metadata', code })
+})
+
 test('mail test sends to the admin account email, 400 when mail is off', async () => {
   const sent = []
   setTransport(async (mail) => { sent.push(mail) })

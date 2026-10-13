@@ -115,6 +115,8 @@ router.get('/profiles', serverCodeGate, async (req, res) => {
       color: p.color,
       hasPin: !!p.pin,
       pinTemporary: !!p.pinTemporary,
+      // Only whether one exists: the picker never learns a handle or an email.
+      hasAccount: !!p.account,
       isGuest: p.isGuest,
       locale: p.locale,
       hasImage: !!p.image,

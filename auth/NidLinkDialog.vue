@@ -1,10 +1,11 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import TemplateModal from '../TemplateModal.vue'
+import { ref, computed } from 'vue'
 import { useI18n } from '../useI18n.js'
 import { useAuth } from './useAuth.js'
 import { useAuthSettings } from './useAuthSettings.js'
-import { nidError, MIN_PASSWORD } from './nidErrors.js'
+import { nidError, fieldErrors, MIN_PASSWORD } from './nidErrors.js'
+import NidDialog from './NidDialog.vue'
+import NidField from './NidField.vue'
 import { Icon } from '../icons'
 
 // Landing for mailed links: ?verify= (sign-up or email change) and ?reset=.
@@ -23,17 +24,16 @@ const password = ref('')
 const repeat = ref('')
 const busy = ref(false)
 const error = ref(null)
+const fields = ref({})
 const done = ref(false)
-const inputRef = ref(null)
-
-onMounted(() => inputRef.value?.focus())
 
 async function submit() {
   if (busy.value) return
   error.value = null
+  fields.value = {}
   if (isReset.value) {
-    if (password.value.length < MIN_PASSWORD) { error.value = t('core.nid.field.passwordShort', { min: MIN_PASSWORD }); return }
-    if (password.value !== repeat.value) { error.value = t('core.nid.field.passwordsDiffer'); return }
+    if (password.value.length < MIN_PASSWORD) { fields.value = { password: t('core.nid.field.passwordShort', { min: MIN_PASSWORD }) }; return }
+    if (password.value !== repeat.value) { fields.value = { repeat: t('core.nid.field.passwordsDiffer') }; return }
   }
   busy.value = true
   try {
@@ -42,41 +42,42 @@ async function submit() {
     done.value = true
   } catch (err) {
     if (err.code === 'server_code_required') refreshSettings()
-    error.value = err.code === 'invalid' ? (Object.values(err.fields || {})[0] || err.message) : nidError(t, err)
+    const f = fieldErrors(t, err)
+    // A bad token has no field of its own here, so it goes to the form-wide message.
+    if (f.token) delete f.token
+    fields.value = f
+    error.value = Object.keys(f).length ? null : nidError(t, err)
   } finally {
     busy.value = false
   }
 }
-
-const inputClass = 'w-full text-sm rounded-xl border border-slate-300 dark:border-white/15 bg-white/70 dark:bg-white/5 text-slate-900 dark:text-white px-3 py-2 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 transition-colors'
 </script>
 
 <template>
-  <TemplateModal :show="true" header :title="isReset ? t('core.nid.resetTitle') : t('core.nid.verifyTitle')" size="sm" z="z-[700]"
-    body-class="px-5 sm:px-6 py-5" @cancel="emit('close')">
-    <div v-if="done" class="flex flex-col items-center gap-3 text-center py-4">
-      <div class="w-12 h-12 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 flex items-center justify-center">
-        <Icon name="check" class="w-6 h-6" :sw="2" />
-      </div>
-      <p class="text-sm text-slate-700 dark:text-white/80">{{ isReset ? t('core.nid.resetDone') : t('core.nid.verifyDone') }}</p>
-      <button class="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 cursor-pointer transition-colors" @click="emit('close')">
-        {{ t('core.button.close') }}
+  <NidDialog :title="isReset ? t('core.nid.resetTitle') : t('core.nid.verifyTitle')"
+    :subtitle="done ? '' : (isReset ? t('core.nid.resetBody') : t('core.nid.verifyBody'))" :z="700" @close="emit('close')">
+    <div v-if="done" class="nid-done" role="status">
+      <span class="nid-done__mark"><Icon name="check" :sw="2" /></span>
+      <p class="nid-body-text">{{ isReset ? t('core.nid.resetDone') : t('core.nid.verifyDone') }}</p>
+      <button type="button" class="nid-btn nid-btn--primary nid-btn--block" data-autofocus @click="emit('close')">
+        {{ t('core.nid.continue') }}
       </button>
     </div>
 
-    <form v-else class="flex flex-col gap-3" novalidate @submit.prevent="submit">
-      <p class="text-sm text-slate-500 dark:text-white/60">{{ isReset ? t('core.nid.resetBody') : t('core.nid.verifyBody') }}</p>
-      <input ref="inputRef" v-model="password" type="password" :class="inputClass"
-        :placeholder="isReset ? t('core.nid.field.newPassword', { min: MIN_PASSWORD }) : t('core.nid.field.password')"
+    <form v-else class="nid-form" novalidate :aria-busy="busy" @submit.prevent="submit">
+      <NidField v-model="password" type="password" :error="fields.password"
+        :label="isReset ? t('core.account.newPassword') : t('core.nid.field.password')"
+        :hint="isReset ? t('core.nid.field.passwordShort', { min: MIN_PASSWORD }) : t('core.nid.verifySsoHint')"
         :autocomplete="isReset ? 'new-password' : 'current-password'" maxlength="200" />
-      <input v-if="isReset" v-model="repeat" type="password" :class="inputClass" :placeholder="t('core.nid.field.repeatPassword')"
+      <NidField v-if="isReset" v-model="repeat" type="password" :label="t('core.nid.field.repeatPassword')" :error="fields.repeat"
         autocomplete="new-password" maxlength="200" />
-      <p v-if="!isReset" class="text-[11px] text-slate-400 dark:text-white/40">{{ t('core.nid.verifySsoHint') }}</p>
-      <p v-if="error" class="text-xs text-red-500 text-center" role="alert">{{ error }}</p>
-      <button type="submit" :disabled="busy"
-        class="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors cursor-pointer">
+      <p v-if="error" class="nid-alert nid-alert--error" role="alert">
+        <Icon name="warning" class="nid-alert__icon" :sw="1.8" /><span>{{ error }}</span>
+      </p>
+      <button type="submit" class="nid-btn nid-btn--primary nid-btn--block" :disabled="busy">
+        <span v-if="busy" class="nid-spinner" aria-hidden="true" />
         {{ busy ? t('core.nid.working') : (isReset ? t('core.nid.resetSubmit') : t('core.nid.verifySubmit')) }}
       </button>
     </form>
-  </TemplateModal>
+  </NidDialog>
 </template>

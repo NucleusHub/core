@@ -3,8 +3,11 @@ import { ref, reactive, watch } from 'vue'
 import { useI18n } from '../useI18n.js'
 import { useAuth } from './useAuth.js'
 import { useAuthSettings } from './useAuthSettings.js'
-import { nidError, HANDLE_RE, EMAIL_RE, MIN_PASSWORD } from './nidErrors.js'
+import { nidError, fieldErrors, HANDLE_RE, EMAIL_RE, MIN_PASSWORD } from './nidErrors.js'
+import NidCrest from './NidCrest.vue'
+import NidField from './NidField.vue'
 import { Icon } from '../icons'
+import './nid.css'
 
 defineProps({
   admin: { type: Boolean, default: false },
@@ -55,64 +58,60 @@ async function submit() {
     else emit('signed-in')
   } catch (err) {
     if (err.code === 'server_code_required') refreshSettings()
-    fields.value = err.code === 'invalid' ? (err.fields || {}) : {}
-    error.value = err.code === 'invalid' ? null : nidError(t, err)
+    fields.value = fieldErrors(t, err)
+    error.value = Object.keys(fields.value).length ? null : nidError(t, err)
   } finally {
     busy.value = false
   }
 }
-
-const inputClass = 'w-full px-3 py-2 rounded-xl bg-white/15 border border-white/25 text-white placeholder-white/40 outline-none focus:border-violet-400 text-sm transition-colors'
 </script>
 
 <template>
-  <div v-if="sentTo" class="flex flex-col items-center gap-3 text-center">
-    <div class="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-200 flex items-center justify-center">
-      <Icon name="check" class="w-6 h-6" :sw="2" />
-    </div>
-    <h2 class="font-semibold text-white">{{ t('core.nid.checkEmailTitle') }}</h2>
-    <p class="text-sm text-white/65">{{ t('core.nid.checkEmailBody', { email: sentTo }) }}</p>
-    <button v-if="!admin" type="button" class="text-sm text-white/60 hover:text-white transition-colors cursor-pointer" @click="emit('cancel')">
+  <div v-if="sentTo" class="nid-done" role="status">
+    <span class="nid-done__mark"><Icon name="send" :sw="1.8" /></span>
+    <h2 class="nid-title">{{ t('core.nid.checkEmailTitle') }}</h2>
+    <p class="nid-body-text">{{ t('core.nid.checkEmailBody', { email: sentTo }) }}</p>
+    <button v-if="!admin" type="button" class="nid-btn nid-btn--quiet nid-btn--block" @click="emit('cancel')">
       {{ t('core.nid.backToSignIn') }}
     </button>
   </div>
 
-  <form v-else class="flex flex-col gap-3 w-full" novalidate @submit.prevent="submit">
-    <h2 class="font-semibold text-white text-center">{{ admin ? t('core.nid.createAdminTitle') : t('core.nid.createAccountTitle') }}</h2>
-    <p v-if="admin" class="text-xs text-white/60 text-center -mt-1">{{ t('core.nid.createAdminBody') }}</p>
-
-    <div>
-      <input v-model="form.displayName" :class="inputClass" :placeholder="t('core.nid.field.displayName')"
-        autocomplete="name" maxlength="64" />
-      <p v-if="fields.displayName" class="mt-1 text-[11px] text-red-300">{{ fields.displayName }}</p>
-    </div>
-    <div>
-      <div class="relative">
-        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-white/40 pointer-events-none">@</span>
-        <input v-model="form.handle" :class="[inputClass, 'pl-7']" :placeholder="t('core.nid.field.handle')"
-          autocomplete="username" autocapitalize="off" spellcheck="false" maxlength="39" @input="handleEdited = true" />
+  <div v-else>
+    <div class="nid-head">
+      <NidCrest />
+      <div class="nid-head__text">
+        <h2 class="nid-title">{{ admin ? t('core.nid.createAdminTitle') : t('core.nid.createAccountTitle') }}</h2>
+        <p class="nid-sub">{{ admin ? t('core.nid.createAdminBody') : t('core.nid.createAccountSub') }}</p>
       </div>
-      <p v-if="fields.handle" class="mt-1 text-[11px] text-red-300">{{ fields.handle }}</p>
-    </div>
-    <div>
-      <input v-model="form.email" type="email" :class="inputClass" :placeholder="t('core.nid.field.email')"
-        autocomplete="email" autocapitalize="off" maxlength="200" />
-      <p v-if="fields.email" class="mt-1 text-[11px] text-red-300">{{ fields.email }}</p>
-    </div>
-    <div>
-      <input v-model="form.password" type="password" :class="inputClass" :placeholder="t('core.nid.field.newPassword', { min: MIN_PASSWORD })"
-        autocomplete="new-password" maxlength="200" />
-      <p v-if="fields.password" class="mt-1 text-[11px] text-red-300">{{ fields.password }}</p>
     </div>
 
-    <p v-if="error" class="text-xs text-red-300 text-center" role="alert">{{ error }}</p>
+    <form class="nid-form" novalidate :aria-busy="busy" @submit.prevent="submit">
+      <NidField v-model="form.displayName" :label="t('core.nid.field.displayName')" :error="fields.displayName"
+        autocomplete="name" maxlength="64" />
+      <NidField v-model="form.handle" prefix="@" :label="t('core.nid.field.handle')" :error="fields.handle"
+        :hint="t('core.nid.field.handleHint')"
+        autocomplete="username" autocapitalize="off" spellcheck="false" maxlength="39" @input="handleEdited = true" />
+      <NidField v-model="form.email" type="email" :label="t('core.nid.field.email')" :error="fields.email"
+        autocomplete="email" autocapitalize="off" spellcheck="false" maxlength="200" />
+      <NidField v-model="form.password" type="password" :label="t('core.nid.field.password')" :error="fields.password"
+        :hint="t('core.nid.field.passwordShort', { min: MIN_PASSWORD })" autocomplete="new-password" maxlength="200" />
 
-    <button type="submit" :disabled="busy"
-      class="w-full py-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors cursor-pointer">
-      {{ busy ? t('core.nid.working') : (admin ? t('core.nid.createAdmin') : t('core.nid.createAccount')) }}
-    </button>
-    <button v-if="!admin" type="button" class="text-sm text-white/60 hover:text-white transition-colors cursor-pointer" @click="emit('cancel')">
-      {{ t('core.nid.haveAccount') }}
-    </button>
-  </form>
+      <p v-if="error" class="nid-alert nid-alert--error" role="alert">
+        <Icon name="warning" class="nid-alert__icon" :sw="1.8" /><span>{{ error }}</span>
+      </p>
+
+      <div class="nid-actions">
+        <button type="submit" class="nid-btn nid-btn--primary nid-btn--block" :disabled="busy">
+          <span v-if="busy" class="nid-spinner" aria-hidden="true" />
+          {{ busy ? t('core.nid.working') : (admin ? t('core.nid.createAdmin') : t('core.nid.createAccount')) }}
+        </button>
+        <template v-if="!admin">
+          <p class="nid-rule"><span>{{ t('core.nid.haveAccountPrompt') }}</span></p>
+          <button type="button" class="nid-btn nid-btn--quiet nid-btn--block nid-btn--sm" @click="emit('cancel')">
+            {{ t('core.nid.signIn') }}
+          </button>
+        </template>
+      </div>
+    </form>
+  </div>
 </template>

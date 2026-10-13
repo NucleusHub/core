@@ -118,11 +118,11 @@ function toUpdate(body) {
   return update
 }
 
-function setupFor(req, code) {
-  const scheme = isHttps(req) ? 'https' : 'http'
+function setupFor(req, code, publicOrigin) {
   const rawHost = (req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim()
   // URL drops the port when it's the scheme default, which is what the apps expect.
-  const url = new URL(`${scheme}://${rawHost}`)
+  const url = new URL(publicOrigin || `${isHttps(req) ? 'https' : 'http'}://${rawHost}`)
+  const scheme = url.protocol.slice(0, -1)
   const file = { scheme, host: url.hostname, ...(url.port ? { port: Number(url.port) } : {}), path: DISCOVERY_PATH, code }
   const query = new URLSearchParams(Object.entries(file).map(([k, v]) => [k, String(v)]))
   const links = Object.fromEntries(APPS.map(app => [app, `com.nucleushome.${app}://server?${query}`]))
@@ -168,8 +168,8 @@ router.patch('/', requireNidAdmin, async (req, res) => {
 
 router.get('/server-code', requireNidAdmin, async (req, res) => {
   try {
-    const code = (await getSettings()).serverCode
-    res.set('Cache-Control', 'no-store').json(code ? setupFor(req, code) : { code: null, links: null, file: null })
+    const { serverCode: code, publicOrigin } = await getSettings()
+    res.set('Cache-Control', 'no-store').json(code ? setupFor(req, code, publicOrigin) : { code: null, links: null, file: null })
   } catch {
     res.status(500).json({ error: 'Server error' })
   }
@@ -182,7 +182,7 @@ router.post('/server-code', requireNidAdmin, async (req, res) => {
     const code = action === 'rotate' ? generateServerCode() : null
     let setup = { code: null, links: null, file: null }
     // Build links before saving so a bad Host header can't leave a code nobody was shown.
-    if (code) setup = setupFor(req, code)
+    if (code) setup = setupFor(req, code, (await getSettings()).publicOrigin)
     await AuthSettings.updateOne({ _id: 'auth' }, { $set: { serverCode: code } }, { upsert: true, setDefaultsOnInsert: true })
     invalidateSettings()
     res.json(setup)

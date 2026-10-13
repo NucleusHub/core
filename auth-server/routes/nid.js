@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import mongoose from 'mongoose'
 import bcrypt from 'bcryptjs'
 import Profile, { accountSummary, colorFromName } from '../models/Profile.js'
 import Group from '../models/Group.js'
@@ -158,7 +159,8 @@ export function nidRouter() {
   const router = Router()
 
   const onLimit = (res) => fail(res, 429, 'rate_limited', 'Too many attempts. Try again in 15 minutes.')
-  const identifier = (req) => norm(req.body?.email ?? req.body?.handle) || String(req.body?.token ?? '').slice(0, 64) || req.profile?.profileId || ''
+  const pickedId = (req) => (typeof req.body?.profileId === 'string' && req.body.profileId.length <= 64 ? `profile:${req.body.profileId}` : '')
+  const identifier = (req) => norm(req.body?.email ?? req.body?.handle) || pickedId(req) || String(req.body?.token ?? '').slice(0, 64) || req.profile?.profileId || ''
   const limit = (name, key = identifier) => rateLimiter({ max: 10, windowMs: WINDOW_MS, key: (req) => `${name}|${req.ip}|${key(req)}`, onLimit })
   // Caps one IP across identifiers: otherwise rotating emails means unlimited scrypt work and spraying.
   const ipLimit = () => rateLimiter({ max: 30, windowMs: WINDOW_MS, onLimit })
@@ -241,16 +243,19 @@ export function nidRouter() {
     res.json({ profile: profileView(await signIn(req, res, row.profileId, settings)) })
   }))
 
+  // Either {email|handle, password} or, from the profile picker, {profileId, password}.
   router.post('/login', serverCodeGate, ipLimit(), limit('login'), handle(async (req, res) => {
     const id = norm(req.body?.email ?? req.body?.handle)
+    const profileId = id ? null : req.body?.profileId
     const password = req.body?.password
-    if (!id) return invalid(res, { email: 'Enter your email or handle.' })
+    if (!id && !profileId) return invalid(res, { email: 'Enter your email or handle.' })
     if (typeof password !== 'string' || !password) return invalid(res, { password: 'Enter your password.' })
 
-    const filter = id.includes('@') ? { 'account.emailLower': id } : { 'account.handleLower': id }
-    const profile = await Profile.findOne(filter).lean()
+    let profile = null
+    if (id) profile = await Profile.findOne(id.includes('@') ? { 'account.emailLower': id } : { 'account.handleLower': id }).lean()
+    else if (mongoose.isValidObjectId(profileId)) profile = await Profile.findOne({ _id: profileId, account: { $exists: true } }).lean()
     const ok = await verifyPassword(password, profile?.account?.passwordHash ?? DECOY_HASH)
-    if (!profile || !ok) return fail(res, 401, 'invalid_credentials', 'That email and password do not match.')
+    if (!profile || !ok) return fail(res, 401, 'invalid_credentials', id ? 'That email and password do not match.' : 'That password is not right.')
 
     const settings = await getSettings()
     if (mailEnabled(settings) && !profile.account.emailVerifiedAt) {

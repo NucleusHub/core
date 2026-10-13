@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, onMounted, onUnmounted, computed, defineAsyncComponent, getCurrentInstance } from 'vue'
+import { ref, watch, nextTick, onMounted, onUnmounted, computed, defineAsyncComponent, getCurrentInstance } from 'vue'
 import { useAuth } from './useAuth.js'
 import { useAuthSettings } from './useAuthSettings.js'
 import { useRegistry } from '../useRegistry.js'
@@ -14,6 +14,8 @@ import { coreMounts } from '../usePluginExtensions.js'
 import MadeByAttribution from '../MadeByAttribution.vue'
 import EasterEggs from '../EasterEggs.vue'
 import SlashIcon from '@core/assets/icons/slash.svg?component'
+import { Icon } from '../icons'
+import './nid.css'
 
 const { isAuthenticated, checked, checkSession, profile, account, accountPanel, openAccountPanel } = useAuth()
 const { serverCode, loaded: authSettingsLoaded, ensureLoaded: loadAuthSettings, refresh: refreshAuthSettings } = useAuthSettings()
@@ -110,13 +112,16 @@ watch(checked, (ok) => {
 watch([checked, isAuthenticated], ([ok, authed]) => {
   if (!ok || !authed || !pendingAccountTab.value) return
   if (account.value) openAccountPanel('manage', pendingAccountTab.value)
-  else nidSignIn.value = true
+  else if (profile.value?.isGuest) nidSignIn.value = true
+  else openAccountPanel('upgrade')
   pendingAccountTab.value = null
 })
 
 // A pass cookie may be missing once the session that vouched for us is gone.
 watch(isAuthenticated, (now, before) => {
   if (before && !now) refreshAuthSettings()
+  // After the live-session toast above has had its chance, a login makes the old SSO notice stale.
+  if (now) nextTick(() => { ssoErrorCode.value = null })
 })
 
 function openNidSignIn() {
@@ -167,30 +172,17 @@ onUnmounted(() => clearTimeout(toastTimer))
   <NidLinkDialog v-if="linkToken && checked && (isAuthenticated || (authSettingsLoaded && !needsServerKey))"
     :kind="linkToken.kind" :token="linkToken.token" @close="linkToken = null" />
 
-  <Transition name="nucleus-toast">
-    <div v-if="toast" class="nucleus-toast" :class="{ 'nucleus-toast--error': toast.kind === 'sso' }" role="status">{{ toastText }}</div>
-  </Transition>
+  <div class="nid">
+    <Transition name="nid-toast">
+      <div v-if="toast" class="nid-toast" :class="{ 'nid-toast--error': toast.kind === 'sso' }" role="status">
+        <span class="nid-toast__dot"><Icon :name="toast.kind === 'sso' ? 'warning' : 'check'" :sw="2.4" /></span>
+        <span>{{ toastText }}</span>
+      </div>
+    </Transition>
+  </div>
 </template>
 
 <style scoped>
-.nucleus-toast {
-  position: fixed;
-  left: 50%;
-  bottom: 1.5rem;
-  transform: translateX(-50%);
-  z-index: 800;
-  max-width: calc(100vw - 2rem);
-  padding: 0.6rem 1rem;
-  border-radius: 999px;
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: #fff;
-  background: rgba(22, 163, 74, 0.92);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
-}
-.nucleus-toast--error { background: rgba(220, 38, 38, 0.92); }
-.nucleus-toast-enter-active, .nucleus-toast-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
-.nucleus-toast-enter-from, .nucleus-toast-leave-to { opacity: 0; transform: translate(-50%, 0.5rem); }
 .nucleus-app-blocked {
   position: fixed;
   inset: 0;

@@ -113,6 +113,11 @@ async function nidLogin(email, password) {
   return signedIn(await nidPost('login', { email, password }))
 }
 
+// The picker already knows which profile; the server never tells it the handle or email.
+async function nidProfileLogin(profileId, password) {
+  return signedIn(await nidPost('login', { profileId, password }))
+}
+
 // Resolves to { pending, email } when a confirmation mail went out, else { profile } with a live session.
 async function nidRegister({ handle, displayName, email, password }) {
   return signedIn(await nidPost('register', { handle, displayName, email, password }))
@@ -164,6 +169,7 @@ export function useAuth() {
     completeTempLogin,
     logout,
     nidLogin,
+    nidProfileLogin,
     nidRegister,
     nidPost,
     upgrade,

@@ -2,6 +2,8 @@
 import { ref, reactive, onMounted } from 'vue'
 import EyeIcon from '@core/assets/icons/eye.svg?component'
 import EyeOffIcon from '@core/assets/icons/eye-off.svg?component'
+import { useI18n } from '../useI18n.js'
+import './nid.css'
 
 defineProps({
   error: { type: String, default: null },
@@ -9,6 +11,7 @@ defineProps({
   disabled: { type: Boolean, default: false },
 })
 const emit = defineEmits(['complete', 'incomplete'])
+const { t } = useI18n()
 
 const boxes = reactive(['', '', '', ''])
 const inputRefs = ref([])
@@ -52,9 +55,9 @@ defineExpose({ clear })
 </script>
 
 <template>
-  <div class="flex flex-col items-center gap-2.5">
-    <div class="flex items-center gap-2">
-      <div class="flex gap-2.5" :class="{ shake }">
+  <div class="nid pin">
+    <div class="pin__row">
+      <div class="pin__boxes" :class="{ shake }">
         <input
           v-for="(_, i) in 4"
           :key="i"
@@ -63,28 +66,65 @@ defineExpose({ clear })
           maxlength="1"
           inputmode="text"
           autocomplete="off"
+          :aria-label="`PIN ${i + 1}/4`"
           :value="boxes[i]"
           :disabled="disabled"
-          class="w-12 h-14 rounded-xl border border-white/30 dark:border-white/20 bg-white/20 dark:bg-white/10 text-slate-900 dark:text-white text-xl font-bold text-center outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 transition-colors caret-transparent disabled:opacity-40 disabled:cursor-not-allowed"
+          class="pin__box"
+          :class="{ 'is-filled': !!boxes[i], 'is-invalid': !!error }"
           @input="onInput(i, $event)"
           @keydown="onKeydown(i, $event)"
           @paste="onPaste"
         />
       </div>
-      <button type="button" @click="visible = !visible"
-        :disabled="disabled"
-        class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-white transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-        :title="visible ? 'Hide PIN' : 'Show PIN'">
+      <button type="button" class="nid-icon-btn" @click="visible = !visible"
+        :disabled="disabled" :aria-pressed="visible"
+        :title="visible ? t('core.profiles.hidePin') : t('core.profiles.showPin')" :aria-label="visible ? t('core.profiles.hidePin') : t('core.profiles.showPin')">
         <EyeIcon v-if="!visible" width="18" height="18" />
         <EyeOffIcon v-else width="18" height="18" />
       </button>
     </div>
-    <p class="text-xs text-slate-400 dark:text-slate-500 tracking-wide">0 – 9 and A – F</p>
-    <p v-if="error" class="text-xs text-red-500">{{ error }}</p>
+    <p class="pin__hint">{{ t('core.profiles.pinChars') }}</p>
+    <p v-if="error" class="pin__error" role="alert">{{ error }}</p>
   </div>
 </template>
 
 <style scoped>
+.pin { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.pin__row { display: flex; align-items: center; gap: 6px; padding-left: 40px; }
+.pin__boxes { display: flex; gap: 10px; }
+
+.pin__box {
+  width: 52px;
+  height: 60px;
+  border: 0;
+  border-radius: 14px;
+  font: inherit;
+  font-size: 1.4rem;
+  font-weight: 650;
+  text-align: center;
+  color: var(--nid-ink-hi);
+  caret-color: transparent;
+  background: var(--nid-field);
+  box-shadow: inset 0 0 0 1px var(--nid-control);
+  outline: none;
+  transition: box-shadow 0.16s var(--nid-ease-std), background-color 0.16s var(--nid-ease-std);
+}
+
+.pin__box:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--nid-control-hover); }
+.pin__box.is-filled { background: var(--nid-accent-bg); box-shadow: inset 0 0 0 1px var(--nid-accent-line); }
+.pin__box:focus { background: var(--nid-field-hover); box-shadow: inset 0 0 0 2px var(--nid-focus), 0 0 0 4px var(--nid-halo); }
+.pin__box.is-invalid { box-shadow: inset 0 0 0 1px var(--nid-danger); }
+.pin__box:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.pin__hint { margin: 0; font-size: 0.75rem; letter-spacing: 0.02em; color: var(--nid-ink-3); }
+.pin__error { margin: 0; font-size: 0.8125rem; text-align: center; color: var(--nid-danger-ink); }
+:global(.dark) .pin__error { color: #fda4af; }
+
+@media (max-width: 380px) {
+  .pin__row { padding-left: 0; }
+  .pin__box { width: 46px; height: 54px; }
+}
+
 @keyframes shake {
   0%, 100% { transform: translateX(0); }
   20%       { transform: translateX(-8px); }

@@ -20,6 +20,28 @@ const CODES = {
   last_admin: 'core.nid.err.lastAdmin',
   account_exists: 'core.nid.err.accountExists',
   guest_profile: 'core.nid.err.guestProfile',
+  no_account: 'core.nid.err.noAccount',
+  not_linked: 'core.nid.err.notLinked',
+  invalid: 'core.nid.err.invalid',
+}
+
+// Server field messages are English; these replace them per field (the code wins for conflicts).
+const FIELD_BY_CODE = {
+  handle_taken: 'core.nid.err.handleTaken',
+  email_taken: 'core.nid.err.emailTaken',
+  wrong_password: 'core.nid.err.wrongPassword',
+  confirm_required: 'core.nid.err.confirmRequired',
+}
+const FIELD_KEYS = {
+  displayName: 'core.nid.field.displayNameInvalid',
+  handle: 'core.nid.field.handleInvalid',
+  email: 'core.nid.field.emailInvalid',
+  password: 'core.nid.field.passwordShort',
+  newPassword: 'core.nid.field.passwordShort',
+  currentPassword: 'core.nid.err.wrongPassword',
+  confirm: 'core.nid.err.confirmRequired',
+  token: 'core.nid.err.tokenInvalid',
+  pin: 'core.nid.field.pinRequired',
 }
 
 export const SSO_ERRORS = [
@@ -36,6 +58,15 @@ export function nidError(t, err) {
   return err.message || t('core.nid.err.generic')
 }
 
+export function fieldErrors(t, err) {
+  const out = {}
+  for (const name of Object.keys(err?.fields || {})) {
+    const key = FIELD_BY_CODE[err.code] || FIELD_KEYS[name] || 'core.nid.err.invalid'
+    out[name] = t(key, { min: MIN_PASSWORD })
+  }
+  return out
+}
+
 export function ssoError(t, code) {
   const key = String(code || '').replace(/_([a-z])/g, (_, c) => c.toUpperCase())
   return SSO_ERRORS.includes(code) ? t(`core.nid.sso.err.${key}`) : t('core.nid.sso.err.generic')
@@ -44,3 +75,9 @@ export function ssoError(t, code) {
 export const HANDLE_RE = /^[a-z0-9][a-z0-9-]{1,38}$/
 export const EMAIL_RE = /^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$/
 export const MIN_PASSWORD = 10
+
+// Web Animations, not a class: swapping the animation property would replay the card's entrance.
+export function shake(el) {
+  if (!el?.animate || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+  el.animate([0, -7, 7, -4, 4, 0].map(x => ({ transform: `translateX(${x}px)` })), { duration: 350, easing: 'ease' })
+}

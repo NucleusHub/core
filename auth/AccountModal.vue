@@ -1,11 +1,12 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import TemplateModal from '../TemplateModal.vue'
-import AppTabs from '../AppTabs.vue'
+import NidDialog from './NidDialog.vue'
+import NidField from './NidField.vue'
+import NidProviderIcon from './NidProviderIcon.vue'
 import { useI18n } from '../useI18n.js'
 import { useAuth } from './useAuth.js'
 import { useAuthSettings } from './useAuthSettings.js'
-import { nidError, HANDLE_RE, EMAIL_RE, MIN_PASSWORD } from './nidErrors.js'
+import { nidError, fieldErrors, HANDLE_RE, EMAIL_RE, MIN_PASSWORD } from './nidErrors.js'
 import AvatarCircle from './AvatarCircle.vue'
 import { Icon } from '../icons'
 
@@ -27,7 +28,6 @@ const TABS = [
   { id: 'delete', label: 'core.account.tabDelete', icon: 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0' },
 ]
 const tab = ref(TABS.some(x => x.id === props.initialTab) ? props.initialTab : 'profile')
-const tabItems = computed(() => TABS.map(x => ({ key: x.id, label: t(x.label), icon: x.icon })))
 
 // Mirrors nucleus-web's accents; the server stores only the id (or a custom hex).
 const ACCENTS = [
@@ -123,8 +123,9 @@ async function saveProfile() {
     profileSaved.value = true
     checkSession()
   } catch (err) {
-    profileFields.value = err.fields ? { ...err.fields, confirm: err.fields.currentPassword || err.fields.confirm } : {}
-    profileError.value = nidError(t, err)
+    const f = fieldErrors(t, err)
+    profileFields.value = { ...f, confirm: f.currentPassword || f.confirm }
+    profileError.value = Object.keys(f).length ? null : nidError(t, err)
   } finally {
     profileBusy.value = false
   }
@@ -135,12 +136,14 @@ const pw = reactive({ current: '', next: '' })
 const pwBusy = ref(false)
 const pwError = ref(null)
 const pwDone = ref(null)
+const pwFields = ref({})
 
 async function changePassword() {
   if (pwBusy.value) return
   pwError.value = null
   pwDone.value = null
-  if (pw.next.length < MIN_PASSWORD) { pwError.value = t('core.nid.field.passwordShort', { min: MIN_PASSWORD }); return }
+  pwFields.value = {}
+  if (pw.next.length < MIN_PASSWORD) { pwFields.value = { newPassword: t('core.nid.field.passwordShort', { min: MIN_PASSWORD }) }; return }
   pwBusy.value = true
   try {
     await api('POST', 'password', { currentPassword: pw.current, newPassword: pw.next })
@@ -148,7 +151,8 @@ async function changePassword() {
     pw.next = ''
     pwDone.value = t('core.account.passwordChanged')
   } catch (err) {
-    pwError.value = nidError(t, err)
+    pwFields.value = fieldErrors(t, err)
+    pwError.value = Object.keys(pwFields.value).length ? null : nidError(t, err)
   } finally {
     pwBusy.value = false
   }
@@ -247,213 +251,429 @@ async function deleteAccount() {
     emit('close')
     await checkSession()
   } catch (err) {
-    delError.value = nidError(t, err)
+    const f = fieldErrors(t, err)
+    delError.value = f.password || f.handle || f.confirm || nidError(t, err)
   } finally {
     delBusy.value = false
   }
 }
-
-const labelClass = 'block text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/35 mb-1.5'
-const inputClass = 'w-full text-sm rounded-xl border border-slate-300 dark:border-white/15 bg-white/70 dark:bg-white/5 text-slate-900 dark:text-white px-3 py-2 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 transition-colors disabled:opacity-60'
-const primaryClass = 'px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors'
-const softClass = 'px-3 py-1.5 rounded-lg text-xs font-semibold text-violet-700 dark:text-violet-300 bg-violet-500/15 hover:bg-violet-500/25 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors'
-const hintClass = 'text-[11px] text-slate-400 dark:text-white/40'
 </script>
 
 <template>
-  <TemplateModal :show="true" size="lg" z="z-[600]" @cancel="emit('close')">
-    <div class="flex flex-col h-[min(36rem,85vh)] bg-white/95 dark:bg-slate-900/95">
-      <div class="flex items-center justify-between px-5 sm:px-6 pt-5 pb-4 border-b border-black/[0.06] dark:border-white/10 shrink-0">
-        <div class="flex items-center gap-3 min-w-0">
-          <AvatarCircle :profile="profile" :size="34" />
-          <div class="min-w-0">
-            <h2 class="text-sm font-semibold text-slate-900 dark:text-white truncate">{{ t('core.account.title') }}</h2>
-            <p v-if="account" class="text-[11px] text-slate-400 dark:text-white/40 truncate">@{{ account.handle }}</p>
-          </div>
-        </div>
-        <button
-          class="cursor-pointer p-1.5 -mr-1 text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors"
-          :aria-label="t('core.button.close')"
-          @click="emit('close')"
-        >
-          <Icon name="close" class="w-4 h-4" :sw="2.5" />
+  <NidDialog size="lg" tall flush :title="account?.displayName || t('core.account.title')"
+    :subtitle="account ? `@${account.handle}` : ''" @close="emit('close')">
+    <template #lead>
+      <AvatarCircle :profile="profile" :size="40" />
+    </template>
+
+    <div class="am">
+      <nav class="am-tabs" role="tablist" :aria-label="t('core.account.title')">
+        <button v-for="x in TABS" :key="x.id" type="button" role="tab" class="am-tab" :class="{ 'is-on': tab === x.id, 'am-tab--danger': x.id === 'delete' }"
+          :aria-selected="tab === x.id" @click="tab = x.id">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="x.icon" /></svg>
+          <span>{{ t(x.label) }}</span>
         </button>
-      </div>
+      </nav>
 
-      <div class="flex-1 min-h-0 flex flex-col sm:flex-row">
-        <AppTabs
-          v-model="tab"
-          variant="rail"
-          :tabs="tabItems"
-          class="shrink-0 sm:w-48 px-3 py-3 overflow-x-auto border-b sm:border-b-0 sm:border-r border-black/[0.06] dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.02]"
-        />
+      <div class="am-main" role="tabpanel">
+        <p v-if="loadError" class="nid-alert nid-alert--error" role="alert">
+          <Icon name="warning" class="nid-alert__icon" :sw="1.8" /><span>{{ loadError }}</span>
+        </p>
+        <p v-else-if="!account" class="nid-note" role="status">{{ t('core.profiles.loading') }}</p>
+        <template v-else>
+          <div v-if="!isNid && tab !== 'apps' && tab !== 'delete'" class="nid-alert nid-alert--warn am-gap">
+            <Icon name="lock" class="nid-alert__icon" :sw="1.8" />
+            <div class="am-banner">
+              <span>{{ t('core.account.pinSession') }}</span>
+              <button type="button" class="nid-btn nid-btn--quiet nid-btn--sm" @click="emit('nid-signin')">{{ t('core.nid.signInWith') }}</button>
+            </div>
+          </div>
 
-        <div class="flex-1 min-h-0 overflow-y-auto px-5 sm:px-6 py-5">
-          <p v-if="loadError" class="text-sm text-red-500">{{ loadError }}</p>
-          <p v-else-if="!account" class="text-sm text-slate-400 dark:text-white/40">{{ t('core.profiles.loading') }}</p>
-          <template v-else>
-            <div v-if="!isNid && tab !== 'apps' && tab !== 'delete'"
-              class="mb-5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 flex flex-col gap-2">
-              <p class="text-xs text-amber-800 dark:text-amber-200">{{ t('core.account.pinSession') }}</p>
-              <button :class="[softClass, 'self-start']" @click="emit('nid-signin')">{{ t('core.nid.signInWith') }}</button>
+          <section v-show="tab === 'profile'" class="am-stack">
+            <div class="am-identity">
+              <span class="am-identity__ring"><AvatarCircle :profile="profile" :size="56" /></span>
+              <div class="am-identity__text">
+                <p class="am-identity__name">{{ account.displayName }}</p>
+                <ul class="am-chips">
+                  <li class="am-chip am-chip--accent">@{{ account.handle }}</li>
+                  <li class="am-chip" :class="account.emailVerified ? 'am-chip--ok' : 'am-chip--warn'">
+                    <Icon :name="account.emailVerified ? 'check' : 'clock'" class="am-chip__icon" :sw="2.2" />
+                    {{ account.emailVerified ? t('core.account.emailConfirmed') : t('core.account.emailUnconfirmed') }}
+                  </li>
+                </ul>
+              </div>
             </div>
 
-            <section v-show="tab === 'profile'" class="flex flex-col gap-4">
-              <div>
-                <label :class="labelClass">{{ t('core.nid.field.displayName') }}</label>
-                <input v-model="form.displayName" :class="inputClass" :disabled="!isNid" maxlength="64" />
-                <p v-if="profileFields.displayName" class="mt-1 text-[11px] text-red-500">{{ profileFields.displayName }}</p>
+            <form class="am-block" novalidate @submit.prevent="saveProfile">
+              <div class="am-grid">
+                <NidField v-model="form.displayName" :label="t('core.nid.field.displayName')" :error="profileFields.displayName" :disabled="!isNid" maxlength="64" />
+                <NidField v-model="form.handle" prefix="@" :label="t('core.nid.field.handle')" :error="profileFields.handle" :disabled="!isNid"
+                  autocapitalize="off" spellcheck="false" maxlength="39" />
+                <NidField v-model="form.email" class="am-wide" type="email" :label="t('core.nid.field.email')" :error="profileFields.email" :disabled="!isNid"
+                  :hint="account.pendingEmail ? t('core.account.pendingEmail', { email: account.pendingEmail }) : null"
+                  autocapitalize="off" spellcheck="false" maxlength="200" />
+                <NidField v-if="emailChanged" v-model="form.confirm" class="am-wide" :type="account.hasPassword ? 'password' : 'text'"
+                  :label="account.hasPassword ? t('core.account.currentPassword') : t('core.account.typeHandle', { handle: account.handle })"
+                  :error="profileFields.confirm" :autocomplete="account.hasPassword ? 'current-password' : 'off'" maxlength="200" />
               </div>
-              <div>
-                <label :class="labelClass">{{ t('core.nid.field.handle') }}</label>
-                <input v-model="form.handle" :class="inputClass" :disabled="!isNid" autocapitalize="off" spellcheck="false" maxlength="39" />
-                <p v-if="profileFields.handle" class="mt-1 text-[11px] text-red-500">{{ profileFields.handle }}</p>
-              </div>
-              <div>
-                <label :class="labelClass">{{ t('core.nid.field.email') }}</label>
-                <input v-model="form.email" type="email" :class="inputClass" :disabled="!isNid" autocapitalize="off" maxlength="200" />
-                <p v-if="profileFields.email" class="mt-1 text-[11px] text-red-500">{{ profileFields.email }}</p>
-                <p v-if="account.pendingEmail" class="mt-1 text-[11px] text-amber-600 dark:text-amber-300">
-                  {{ t('core.account.pendingEmail', { email: account.pendingEmail }) }}
-                </p>
-                <p v-else-if="!account.emailVerified" class="mt-1 text-[11px] text-amber-600 dark:text-amber-300">
-                  {{ t('core.account.emailUnverified') }}
-                </p>
-              </div>
-              <div v-if="emailChanged">
-                <label :class="labelClass">{{ account.hasPassword ? t('core.account.currentPassword') : t('core.account.typeHandle', { handle: account.handle }) }}</label>
-                <input v-model="form.confirm" :type="account.hasPassword ? 'password' : 'text'" :class="inputClass"
-                  :autocomplete="account.hasPassword ? 'current-password' : 'off'" maxlength="200" />
-                <p v-if="profileFields.confirm" class="mt-1 text-[11px] text-red-500">{{ profileFields.confirm }}</p>
-              </div>
-              <p v-if="profileError" class="text-[11px] text-red-500">{{ profileError }}</p>
-              <div class="flex items-center gap-2">
-                <button :class="primaryClass" :disabled="!isNid || profileBusy || !profileDirty" @click="saveProfile">
-                  {{ profileBusy ? t('core.profiles.saving') : t('core.profiles.saveChanges') }}
-                </button>
-                <span v-if="profileSaved && !profileDirty" class="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                  <Icon name="check" class="w-3.5 h-3.5" :sw="2.5" />
+              <p v-if="profileError" class="nid-alert nid-alert--error" role="alert">
+                <Icon name="warning" class="nid-alert__icon" :sw="1.8" /><span>{{ profileError }}</span>
+              </p>
+              <div class="am-foot">
+                <span v-if="profileSaved && !profileDirty" class="am-saved" role="status">
+                  <Icon name="check" class="am-saved__icon" :sw="2.4" />
                   {{ account.pendingEmail ? t('core.account.confirmViaEmail') : t('core.profiles.saved') }}
                 </span>
+                <button type="submit" class="nid-btn nid-btn--primary nid-btn--sm" :disabled="!isNid || profileBusy || !profileDirty">
+                  <span v-if="profileBusy" class="nid-spinner" aria-hidden="true" />
+                  {{ profileBusy ? t('core.profiles.saving') : t('core.profiles.saveChanges') }}
+                </button>
               </div>
-            </section>
+            </form>
+          </section>
 
-            <section v-show="tab === 'password'" class="flex flex-col gap-4">
+          <section v-show="tab === 'password'" class="am-stack">
+            <form class="am-block" novalidate @submit.prevent="changePassword">
+              <div class="am-block__head">
+                <h3 class="am-block__title">{{ t('core.account.tabPassword') }}</h3>
+                <p class="am-block__hint">{{ account.hasPassword ? t('core.account.passwordHint') : t('core.account.noPassword') }}</p>
+              </div>
               <template v-if="account.hasPassword">
-                <div>
-                  <label :class="labelClass">{{ t('core.account.currentPassword') }}</label>
-                  <input v-model="pw.current" type="password" :class="inputClass" :disabled="!isNid" autocomplete="current-password" maxlength="200" />
-                </div>
-                <div>
-                  <label :class="labelClass">{{ t('core.account.newPassword') }}</label>
-                  <input v-model="pw.next" type="password" :class="inputClass" :disabled="!isNid" autocomplete="new-password" maxlength="200"
-                    :placeholder="t('core.nid.field.newPassword', { min: MIN_PASSWORD })" />
-                </div>
-                <div>
-                  <button :class="primaryClass" :disabled="!isNid || pwBusy || !pw.current || !pw.next" @click="changePassword">
-                    {{ pwBusy ? t('core.profiles.saving') : t('core.account.changePassword') }}
-                  </button>
-                </div>
+                <NidField v-model="pw.current" type="password" :label="t('core.account.currentPassword')" :error="pwFields.currentPassword"
+                  :disabled="!isNid" autocomplete="current-password" maxlength="200" />
+                <NidField v-model="pw.next" type="password" :label="t('core.account.newPassword')" :error="pwFields.newPassword"
+                  :hint="t('core.nid.field.passwordShort', { min: MIN_PASSWORD })" :disabled="!isNid" autocomplete="new-password" maxlength="200" />
               </template>
-              <template v-else>
-                <p class="text-xs text-slate-500 dark:text-white/60">{{ t('core.account.noPassword') }}</p>
-                <div>
-                  <button :class="softClass" :disabled="pwBusy" @click="mailPasswordLink">{{ t('core.account.mailPasswordLink') }}</button>
-                </div>
-              </template>
-              <p v-if="pwError" class="text-[11px] text-red-500">{{ pwError }}</p>
-              <p v-if="pwDone" class="text-[11px] text-emerald-600 dark:text-emerald-400">{{ pwDone }}</p>
-
-              <div class="pt-4 mt-2 border-t border-black/[0.06] dark:border-white/10 flex flex-col gap-2">
-                <label :class="labelClass">{{ t('core.account.sessions') }}</label>
-                <p :class="hintClass">{{ t('core.account.logoutAllHint') }}</p>
-                <div v-if="!confirmingLogoutAll">
-                  <button :class="softClass" @click="confirmingLogoutAll = true">{{ t('core.account.logoutAll') }}</button>
-                </div>
-                <div v-else class="flex items-center gap-2">
-                  <button class="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-red-600 hover:bg-red-500 cursor-pointer transition-colors" @click="signOutEverywhere">
-                    {{ t('core.account.logoutAllConfirm') }}
-                  </button>
-                  <button class="text-xs text-slate-500 dark:text-white/50 hover:text-slate-900 dark:hover:text-white cursor-pointer" @click="confirmingLogoutAll = false">
-                    {{ t('core.button.cancel') }}
-                  </button>
-                </div>
+              <p v-if="pwError" class="nid-alert nid-alert--error" role="alert">
+                <Icon name="warning" class="nid-alert__icon" :sw="1.8" /><span>{{ pwError }}</span>
+              </p>
+              <p v-if="pwDone" class="nid-alert nid-alert--ok" role="status">
+                <Icon name="check" class="nid-alert__icon" :sw="2" /><span>{{ pwDone }}</span>
+              </p>
+              <div class="am-foot">
+                <button v-if="account.hasPassword" type="submit" class="nid-btn nid-btn--primary nid-btn--sm" :disabled="!isNid || pwBusy || !pw.current || !pw.next">
+                  <span v-if="pwBusy" class="nid-spinner" aria-hidden="true" />
+                  {{ pwBusy ? t('core.profiles.saving') : t('core.account.changePassword') }}
+                </button>
+                <button v-else type="button" class="nid-btn nid-btn--accent nid-btn--sm" :disabled="pwBusy" @click="mailPasswordLink">{{ t('core.account.mailPasswordLink') }}</button>
               </div>
-            </section>
+            </form>
 
-            <section v-show="tab === 'appearance'" class="flex flex-col gap-4">
-              <p :class="hintClass">{{ t('core.account.appearanceHint') }}</p>
-              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2" role="radiogroup" :aria-label="t('core.account.tabAppearance')">
-                <label v-for="a in ACCENTS" :key="a.id"
-                  class="flex items-center gap-2.5 px-3 py-2 rounded-xl border cursor-pointer transition-colors"
-                  :class="look.accent === a.id ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-200 dark:border-white/10 hover:bg-black/[0.03] dark:hover:bg-white/5'">
-                  <input v-model="look.accent" class="sr-only" type="radio" :value="a.id" :disabled="!isNid" />
-                  <span class="w-6 h-6 rounded-full shrink-0" :style="{ background: `linear-gradient(${a.soft}, ${a.accent})` }" />
-                  <span class="text-sm text-slate-800 dark:text-white/85">{{ a.label }}</span>
+            <div class="am-block">
+              <div class="am-block__head">
+                <h3 class="am-block__title">{{ t('core.account.sessions') }}</h3>
+                <p class="am-block__hint">{{ t('core.account.logoutAllHint') }}</p>
+              </div>
+              <div class="am-foot am-foot--start">
+                <button v-if="!confirmingLogoutAll" type="button" class="nid-btn nid-btn--quiet nid-btn--sm" @click="confirmingLogoutAll = true">{{ t('core.account.logoutAll') }}</button>
+                <template v-else>
+                  <button type="button" class="nid-btn nid-btn--danger nid-btn--sm" @click="signOutEverywhere">{{ t('core.account.logoutAllConfirm') }}</button>
+                  <button type="button" class="nid-btn nid-btn--quiet nid-btn--sm" @click="confirmingLogoutAll = false">{{ t('core.button.cancel') }}</button>
+                </template>
+              </div>
+            </div>
+          </section>
+
+          <section v-show="tab === 'appearance'" class="am-stack">
+            <div class="am-block">
+              <div class="am-block__head">
+                <h3 class="am-block__title">{{ t('core.account.accentTitle') }}</h3>
+                <p class="am-block__hint">{{ t('core.account.appearanceHint') }}</p>
+              </div>
+              <div class="am-looks" role="radiogroup" :aria-label="t('core.account.accentTitle')">
+                <label v-for="a in ACCENTS" :key="a.id" class="am-look" :class="{ 'is-on': look.accent === a.id, 'is-disabled': !isNid }">
+                  <input v-model="look.accent" class="nid-sr" type="radio" :value="a.id" :disabled="!isNid" />
+                  <span class="am-look__swatch" :style="{ background: `linear-gradient(${a.soft}, ${a.accent})` }" aria-hidden="true" />
+                  <span class="am-look__name">{{ a.label }}</span>
                 </label>
-                <label
-                  class="flex items-center gap-2.5 px-3 py-2 rounded-xl border cursor-pointer transition-colors"
-                  :class="look.accent === 'custom' ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-200 dark:border-white/10 hover:bg-black/[0.03] dark:hover:bg-white/5'">
-                  <input v-model="look.accent" class="sr-only" type="radio" value="custom" :disabled="!isNid" />
-                  <span class="w-6 h-6 rounded-full shrink-0" :style="{ background: look.customAccent }" />
-                  <span class="text-sm text-slate-800 dark:text-white/85 flex-1">{{ t('core.account.customAccent') }}</span>
-                  <input v-model="look.customAccent" type="color" class="w-6 h-6 rounded cursor-pointer bg-transparent" :disabled="!isNid"
+                <label class="am-look" :class="{ 'is-on': look.accent === 'custom', 'is-disabled': !isNid }">
+                  <input v-model="look.accent" class="nid-sr" type="radio" value="custom" :disabled="!isNid" />
+                  <span class="am-look__swatch" :style="{ background: look.customAccent }" aria-hidden="true" />
+                  <span class="am-look__name">{{ t('core.account.customAccent') }}</span>
+                  <input v-model="look.customAccent" type="color" class="am-look__color" :disabled="!isNid"
                     :aria-label="t('core.account.customAccent')" @input="look.accent = 'custom'" />
                 </label>
               </div>
-              <p v-if="lookError" class="text-[11px] text-red-500">{{ lookError }}</p>
-              <div class="flex items-center gap-2">
-                <button :class="primaryClass" :disabled="!isNid || lookBusy || !lookDirty" @click="saveLook">
+              <p v-if="lookError" class="nid-alert nid-alert--error" role="alert">
+                <Icon name="warning" class="nid-alert__icon" :sw="1.8" /><span>{{ lookError }}</span>
+              </p>
+              <div class="am-foot">
+                <span v-if="lookSaved && !lookDirty" class="am-saved" role="status">
+                  <Icon name="check" class="am-saved__icon" :sw="2.4" />{{ t('core.profiles.saved') }}
+                </span>
+                <button type="button" class="nid-btn nid-btn--primary nid-btn--sm" :disabled="!isNid || lookBusy || !lookDirty" @click="saveLook">
+                  <span v-if="lookBusy" class="nid-spinner" aria-hidden="true" />
                   {{ lookBusy ? t('core.profiles.saving') : t('core.profiles.saveChanges') }}
                 </button>
-                <span v-if="lookSaved && !lookDirty" class="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                  <Icon name="check" class="w-3.5 h-3.5" :sw="2.5" />
-                  {{ t('core.profiles.saved') }}
-                </span>
               </div>
-            </section>
+            </div>
+          </section>
 
-            <section v-show="tab === 'linked'" class="flex flex-col gap-3">
-              <p :class="hintClass">{{ t('core.account.linkedHint') }}</p>
-              <p v-if="!linkedRows.length" class="text-xs text-slate-400 dark:text-white/35 py-2">{{ t('core.account.linkedNone') }}</p>
-              <ul v-else class="flex flex-col divide-y divide-slate-200/60 dark:divide-white/8">
-                <li v-for="p in linkedRows" :key="p.id" class="flex items-center gap-3 py-3">
-                  <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium text-slate-900 dark:text-white">{{ p.label }}</p>
-                    <p :class="[hintClass, 'truncate']">{{ p.identity ? (p.identity.email || t('core.account.linked')) : t('core.account.notLinked') }}</p>
+          <section v-show="tab === 'linked'" class="am-stack">
+            <div class="am-block">
+              <div class="am-block__head">
+                <h3 class="am-block__title">{{ t('core.account.tabLinked') }}</h3>
+                <p class="am-block__hint">{{ t('core.account.linkedHint') }}</p>
+              </div>
+              <p v-if="!linkedRows.length" class="am-empty">{{ t('core.account.linkedNone') }}</p>
+              <ul v-else class="am-ways">
+                <li v-for="p in linkedRows" :key="p.id" class="am-way">
+                  <span class="am-way__icon"><NidProviderIcon :id="p.id" /></span>
+                  <div class="am-way__text">
+                    <span class="am-way__name">{{ p.label }}</span>
+                    <span class="am-way__detail">{{ p.identity ? (p.identity.email || t('core.account.linked')) : t('core.account.notLinked') }}</span>
                   </div>
-                  <button v-if="p.identity" :class="softClass" :disabled="!isNid || linkBusy === p.id" @click="disconnect(p.id)">
-                    {{ t('core.account.disconnect') }}
+                  <button v-if="p.identity" type="button" class="nid-btn nid-btn--quiet nid-btn--sm" :disabled="!isNid || linkBusy === p.id" @click="disconnect(p.id)">
+                    {{ t('core.account.disconnect') }}<span class="nid-sr"> {{ p.label }}</span>
                   </button>
-                  <button v-else :class="softClass" :disabled="!isNid" @click="connect(p.id)">{{ t('core.account.connect') }}</button>
+                  <button v-else type="button" class="nid-btn nid-btn--accent nid-btn--sm" :disabled="!isNid" @click="connect(p.id)">
+                    {{ t('core.account.connect') }}<span class="nid-sr"> {{ p.label }}</span>
+                  </button>
                 </li>
               </ul>
-              <p v-if="linkError" class="text-[11px] text-red-500">{{ linkError }}</p>
-            </section>
+              <p v-if="linkError" class="nid-alert nid-alert--error" role="alert">
+                <Icon name="warning" class="nid-alert__icon" :sw="1.8" /><span>{{ linkError }}</span>
+              </p>
+            </div>
+          </section>
 
-            <!-- Connected OAuth apps arrive with the OAuth provider. -->
-            <section v-show="tab === 'apps'" class="flex flex-col gap-3">
-              <p class="text-xs text-slate-400 dark:text-white/35 py-2">{{ t('core.account.appsEmpty') }}</p>
-            </section>
+          <!-- Connected OAuth apps arrive with the OAuth provider. -->
+          <section v-show="tab === 'apps'" class="am-stack">
+            <div class="am-block am-block--empty">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="TABS[4].icon" /></svg>
+              <h3 class="am-block__title">{{ t('core.account.appsEmptyTitle') }}</h3>
+              <p class="am-block__hint">{{ t('core.account.appsEmpty') }}</p>
+            </div>
+          </section>
 
-            <section v-show="tab === 'delete'" class="flex flex-col gap-4">
-              <p class="text-sm text-slate-700 dark:text-white/80">{{ t('core.account.deleteBody') }}</p>
-              <div>
-                <label :class="labelClass">{{ account.hasPassword ? t('core.nid.field.password') : t('core.account.typeHandle', { handle: account.handle }) }}</label>
-                <input v-model="delConfirm" :type="account.hasPassword ? 'password' : 'text'" :class="inputClass"
-                  :autocomplete="account.hasPassword ? 'current-password' : 'off'" maxlength="200" />
+          <section v-show="tab === 'delete'" class="am-stack">
+            <form class="am-block am-danger" novalidate @submit.prevent="deleteAccount">
+              <div class="am-block__head">
+                <h3 class="am-block__title am-danger__title">{{ t('core.account.tabDelete') }}</h3>
+                <p class="am-block__hint">{{ t('core.account.deleteBody') }}</p>
               </div>
-              <p v-if="delError" class="text-[11px] text-red-500">{{ delError }}</p>
-              <div>
-                <button class="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
-                  :disabled="delBusy || !delConfirm" @click="deleteAccount">
+              <NidField v-model="delConfirm" :type="account.hasPassword ? 'password' : 'text'" :error="delError"
+                :label="account.hasPassword ? t('core.nid.field.password') : t('core.account.typeHandle', { handle: account.handle })"
+                :autocomplete="account.hasPassword ? 'current-password' : 'off'" maxlength="200" />
+              <div class="am-foot">
+                <button type="submit" class="nid-btn nid-btn--danger nid-btn--sm" :disabled="delBusy || !delConfirm">
+                  <span v-if="delBusy" class="nid-spinner" aria-hidden="true" />
                   {{ delBusy ? t('core.nid.working') : t('core.account.deleteConfirm') }}
                 </button>
               </div>
-            </section>
-          </template>
-        </div>
+            </form>
+          </section>
+        </template>
       </div>
     </div>
-  </TemplateModal>
+  </NidDialog>
 </template>
+
+<style scoped>
+.am { display: flex; flex: 1; min-height: 0; width: 100%; }
+
+.am-tabs {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 13rem;
+  padding: 14px 10px;
+  overflow-y: auto;
+  border-right: 1px solid var(--nid-line-soft);
+  background: var(--nid-raise);
+}
+
+.am-tab {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 12px;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-align: left;
+  color: var(--nid-ink-2);
+  background: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.16s var(--nid-ease-std), background-color 0.16s var(--nid-ease-std), box-shadow 0.16s var(--nid-ease-std);
+}
+
+.am-tab svg { flex: none; width: 18px; height: 18px; }
+.am-tab:hover { color: var(--nid-ink-hi); background: var(--nid-quiet); }
+.am-tab:focus-visible { outline: 2px solid var(--nid-focus); outline-offset: -2px; }
+.am-tab.is-on { color: var(--nid-ink-hi); background: var(--nid-accent-bg); box-shadow: inset 0 0 0 1px var(--nid-accent-line); }
+.am-tab.is-on svg { color: var(--nid-accent); }
+.am-tab--danger { margin-top: auto; }
+.am-tab--danger:hover, .am-tab--danger.is-on { color: var(--nid-danger-ink); }
+.am-tab--danger.is-on { background: var(--nid-danger-bg); box-shadow: inset 0 0 0 1px var(--nid-danger-line); }
+.am-tab--danger.is-on svg { color: var(--nid-danger); }
+
+.am-main {
+  flex: 1;
+  min-width: 0;
+  padding: 22px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.am-gap { margin-bottom: 16px; }
+.am-banner { display: flex; flex: 1; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+
+.am-stack { display: flex; flex-direction: column; gap: 16px; }
+
+.am-identity {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px;
+  border-radius: 18px;
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(168, 85, 247, 0.16) 0%, transparent 55%),
+    radial-gradient(90% 120% at 100% 100%, rgba(99, 102, 241, 0.1) 0%, transparent 60%),
+    var(--nid-raise);
+  box-shadow: inset 0 0 0 1px var(--nid-line);
+}
+
+.am-identity__ring { padding: 3px; border-radius: 50%; box-shadow: 0 0 0 1.5px var(--nid-accent-line), 0 14px 30px -14px rgba(168, 85, 247, 0.7); }
+.am-identity__text { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+
+.am-identity__name {
+  margin: 0;
+  overflow: hidden;
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--nid-ink-hi);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.am-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+
+.am-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--nid-ink-2);
+  background: var(--nid-quiet);
+  box-shadow: inset 0 0 0 1px var(--nid-line);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.am-chip__icon { width: 12px; height: 12px; }
+.am-chip--accent { color: var(--nid-accent-ink); background: var(--nid-accent-bg); box-shadow: inset 0 0 0 1px var(--nid-accent-line); }
+.am-chip--ok { color: var(--nid-ok-ink); background: var(--nid-ok-bg); box-shadow: inset 0 0 0 1px var(--nid-ok-line); }
+.am-chip--warn { color: var(--nid-warn-ink); background: var(--nid-warn-bg); box-shadow: inset 0 0 0 1px var(--nid-warn-line); }
+
+.am-block {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  border-radius: 18px;
+  background: var(--nid-raise);
+  box-shadow: inset 0 0 0 1px var(--nid-line);
+}
+
+.am-block__head { display: flex; flex-direction: column; gap: 3px; }
+.am-block__title { margin: 0; font-size: 0.95rem; font-weight: 600; letter-spacing: -0.012em; color: var(--nid-ink-hi); }
+.am-block__hint { margin: 0; font-size: 0.8125rem; line-height: 1.5; color: var(--nid-ink-3); text-wrap: pretty; }
+
+.am-block--empty { align-items: center; gap: 8px; padding: 36px 20px; text-align: center; }
+.am-block--empty svg { width: 30px; height: 30px; margin-bottom: 4px; color: var(--nid-ink-3); }
+
+.am-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.am-wide { grid-column: 1 / -1; }
+
+.am-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; }
+.am-foot--start { justify-content: flex-start; }
+
+.am-saved { display: inline-flex; align-items: center; gap: 5px; font-size: 0.8125rem; font-weight: 500; color: var(--nid-ok-ink); }
+.am-saved__icon { width: 14px; height: 14px; }
+
+.am-looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr)); gap: 8px; }
+
+.am-look {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 8px 12px;
+  border-radius: 14px;
+  background: var(--nid-raise);
+  box-shadow: inset 0 0 0 1px var(--nid-line);
+  cursor: pointer;
+  transition: background-color 0.16s var(--nid-ease-std), box-shadow 0.16s var(--nid-ease-std);
+}
+
+.am-look:hover { background: var(--nid-quiet); }
+.am-look:focus-within { outline: 2px solid var(--nid-focus); outline-offset: 2px; }
+.am-look.is-on { background: var(--nid-accent-bg); box-shadow: inset 0 0 0 1.5px var(--nid-accent); }
+.am-look.is-disabled { cursor: not-allowed; opacity: 0.6; }
+.am-look__swatch { width: 34px; height: 34px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2), 0 6px 14px -8px rgba(0, 0, 0, 0.5); }
+.am-look__name { font-size: 0.8125rem; color: var(--nid-ink-2); }
+.am-look.is-on .am-look__name { color: var(--nid-ink-hi); font-weight: 600; }
+.am-look__color { position: absolute; top: 14px; width: 34px; height: 34px; opacity: 0; cursor: pointer; }
+
+.am-empty { margin: 0; font-size: 0.875rem; color: var(--nid-ink-3); }
+
+.am-ways {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--nid-line-soft);
+}
+
+.am-way { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--nid-field); }
+.am-way__icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; color: var(--nid-ink-hi); background: var(--nid-quiet); }
+.am-way__icon :deep(svg) { width: 17px; height: 17px; }
+.am-way__text { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.am-way__name { font-size: 0.9rem; font-weight: 500; color: var(--nid-ink-hi); }
+.am-way__detail { overflow: hidden; font-size: 0.8125rem; color: var(--nid-ink-3); white-space: nowrap; text-overflow: ellipsis; }
+
+.am-danger {
+  background: linear-gradient(180deg, var(--nid-danger-bg), transparent 140%);
+  box-shadow: inset 0 0 0 1px var(--nid-danger-line);
+}
+
+.am-danger__title { color: var(--nid-danger-ink); }
+
+@media (max-width: 640px) {
+  .am { flex-direction: column; }
+  .am-tabs {
+    flex-direction: row;
+    width: auto;
+    padding: 8px 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    border-bottom: 1px solid var(--nid-line-soft);
+    scrollbar-width: none;
+  }
+  .am-tabs::-webkit-scrollbar { display: none; }
+  .am-tab { min-height: 36px; padding: 0 12px; }
+  .am-tab--danger { margin-top: 0; }
+  .am-main { padding: 16px; }
+  .am-grid { grid-template-columns: 1fr; }
+  .am-identity { padding: 14px; }
+  .am-block { padding: 16px; }
+}
+</style>
