@@ -6,6 +6,7 @@ import { generateServerCode } from '../lib/serverCode.js'
 import { isHttps, revokeAllSessions } from '../lib/session.js'
 import { hashPassword } from '../lib/password.js'
 import { revokeEmailTokens } from '../models/EmailToken.js'
+import { mailEnabled, sendTest } from '../lib/mailer.js'
 import { randomBytes } from 'node:crypto'
 import mongoose from 'mongoose'
 
@@ -165,6 +166,15 @@ router.patch('/', requireNidAdmin, async (req, res) => {
   }
 })
 
+router.get('/server-code', requireNidAdmin, async (req, res) => {
+  try {
+    const code = (await getSettings()).serverCode
+    res.set('Cache-Control', 'no-store').json(code ? setupFor(req, code) : { code: null, links: null, file: null })
+  } catch {
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
 router.post('/server-code', requireNidAdmin, async (req, res) => {
   const action = req.body?.action
   if (action !== 'rotate' && action !== 'clear') return res.status(400).json({ error: 'action must be rotate or clear' })
@@ -176,6 +186,24 @@ router.post('/server-code', requireNidAdmin, async (req, res) => {
     await AuthSettings.updateOne({ _id: 'auth' }, { $set: { serverCode: code } }, { upsert: true, setDefaultsOnInsert: true })
     invalidateSettings()
     res.json(setup)
+  } catch {
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+router.post('/mail/test', requireNidAdmin, async (req, res) => {
+  try {
+    const settings = await getSettings()
+    if (!mailEnabled(settings)) return res.status(400).json({ error: 'Mail is not configured', code: 'mail_disabled' })
+    const profile = await Profile.findById(req.profile.profileId).select('account.email').lean()
+    const to = profile?.account?.email
+    if (!to) return res.status(400).json({ error: 'Your profile has no email address', code: 'no_email' })
+    try {
+      await sendTest(settings, { to })
+    } catch (err) {
+      return res.status(502).json({ error: err.message, code: 'mail_failed' })
+    }
+    res.json({ to })
   } catch {
     res.status(500).json({ error: 'Server error' })
   }

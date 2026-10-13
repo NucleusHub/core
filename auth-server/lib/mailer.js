@@ -60,3 +60,12 @@ export function sendPasswordReset(settings, { to, token }) {
     action: { label: 'Choose a new password', url: link(settings, 'reset', token) },
   })
 }
+
+export function sendTest(settings, { to }) {
+  return send(settings, {
+    to,
+    subject: 'Nucleus test email',
+    lines: ['Hi,', 'This is a test from your Nucleus admin console. Mail delivery works.'],
+    action: { label: 'Open Nucleus', url: `${settings.publicOrigin}/` },
+  })
+}

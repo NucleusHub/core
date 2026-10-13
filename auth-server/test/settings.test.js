@@ -4,6 +4,8 @@ import request from 'supertest'
 import { startDb, stopDb, makeApp, createProfile, loginAs, loginAsNid } from './helpers.js'
 import AuthSettings, { getSettings, invalidateSettings } from '../models/AuthSettings.js'
 import { isServerCode } from '../lib/serverCode.js'
+import { setTransport } from '../lib/mailer.js'
+import Profile from '../models/Profile.js'
 
 let app
 let admin
@@ -156,4 +158,56 @@ test('publicOrigin is validated, never auto-filled, and GET suggests one from th
   assert.equal(ok.body.publicOrigin, 'https://my.server.ts.net:8443')
   await request(app).patch('/api/auth/settings').set('Cookie', nidCookie).send({ publicOrigin: null })
   assert.equal((await getSettings()).publicOrigin, null)
+})
+
+test('GET server-code returns the current setup without rotating', async () => {
+  let res = await request(app).get('/api/auth/settings/server-code').set('Cookie', nidCookie)
+  assert.equal(res.status, 200)
+  assert.deepEqual(res.body, { code: null, links: null, file: null })
+  // PIN login is gated once a key exists, so check the PIN rejection first.
+  const pinSession = sessionCookie(await loginAs(request(app), admin, '1234'))
+  assert.equal((await request(app).get('/api/auth/settings/server-code').set('Cookie', pinSession)).status, 403)
+
+  const rotated = await request(app).post('/api/auth/settings/server-code').set('Cookie', nidCookie)
+    .set('Host', 'nucleus.example:8080').send({ action: 'rotate' })
+  res = await request(app).get('/api/auth/settings/server-code').set('Cookie', nidCookie).set('Host', 'nucleus.example:8080')
+  assert.equal(res.status, 200)
+  assert.deepEqual(res.body, rotated.body)
+  assert.equal((await getSettings()).serverCode, rotated.body.code)
+})
+
+test('mail test sends to the admin account email, 400 when mail is off', async () => {
+  const sent = []
+  setTransport(async (mail) => { sent.push(mail) })
+  try {
+    let res = await request(app).post('/api/auth/settings/mail/test').set('Cookie', nidCookie)
+    assert.equal(res.status, 400)
+    assert.equal(res.body.code, 'mail_disabled')
+
+    await request(app).patch('/api/auth/settings').set('Cookie', nidCookie).send({
+      mail: { resendKey: 're_k', from: 'Nucleus <a@b.c>' }, publicOrigin: 'https://home.example.org',
+    })
+    res = await request(app).post('/api/auth/settings/mail/test').set('Cookie', nidCookie)
+    assert.equal(res.status, 400)
+    assert.equal(res.body.code, 'no_email')
+
+    await Profile.updateOne({ _id: admin._id }, { $set: { account: {
+      handle: 'boss', handleLower: 'boss', email: 'boss@example.com', emailLower: 'boss@example.com',
+    } } })
+    res = await request(app).post('/api/auth/settings/mail/test').set('Cookie', nidCookie)
+    assert.equal(res.status, 200)
+    assert.equal(res.body.to, 'boss@example.com')
+    assert.equal(sent.length, 1)
+    assert.equal(sent[0].key, 're_k')
+    assert.equal(sent[0].message.to, 'boss@example.com')
+    assert.equal(sent[0].message.from, 'Nucleus <a@b.c>')
+
+    setTransport(async () => { throw new Error('Resend 403: bad key') })
+    res = await request(app).post('/api/auth/settings/mail/test').set('Cookie', nidCookie)
+    assert.equal(res.status, 502)
+    assert.equal(res.body.code, 'mail_failed')
+  } finally {
+    setTransport(null)
+    await Profile.updateOne({ _id: admin._id }, { $unset: { account: '' } })
+  }
 })
