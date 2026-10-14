@@ -10,7 +10,7 @@ import { nidError, fieldErrors, HANDLE_RE, EMAIL_RE, MIN_PASSWORD } from './nidE
 import AvatarCircle from './AvatarCircle.vue'
 import { Icon } from '../icons'
 import { qrCall } from './qrApi.js'
-import QRCode from 'qrcode'
+import QRCode from '../vendor/qrcode.js'
 
 const props = defineProps({
   initialTab: { type: String, default: 'profile' },

@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
-import QRCode from 'qrcode'
+import QRCode from '../vendor/qrcode.js'
 import { useI18n } from '../useI18n.js'
 import { useAuth } from './useAuth.js'
 import { qrCall } from './qrApi.js'
