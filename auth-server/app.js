@@ -13,7 +13,8 @@ import { ssoRouter } from './routes/sso.js'
 export function createApp() {
   const app = express()
   // One proxy hop (nginx) in front; without this every client shares the nginx IP for rate limits.
-  app.set('trust proxy', 1)
+  // Skip every private hop (stack nginx, edge, tunnel) to reach the real client address.
+  app.set('trust proxy', 'loopback, linklocal, uniquelocal')
   app.use(corsPolicy)
   app.use(sameOrigin)
   // Before the body parser: bodies are streamed through untouched.
