@@ -1,3 +1,5 @@
+import { recolor } from './useAppearance.js'
+
 const PALETTE = ['#6366f1', '#a78bfa', '#34d399', '#fbbf24', '#f472b6']
 
 function prefersReducedMotion() {
@@ -90,8 +92,9 @@ export function burst(opts = {}) {
     startVelocity = 34,
     gravity = 0.42,
     scalar = 1,
-    colors = PALETTE,
+    colors: requested = PALETTE,
   } = opts
+  const colors = requested.map(recolor)
 
   ensureCanvas()
 

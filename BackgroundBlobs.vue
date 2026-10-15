@@ -255,3 +255,16 @@
   .bd__dust--near { background-size: 300px 300px; }
 }
 </style>
+
+<style>
+html[data-nuc-wallpaper="none"] .bd .bd__light,
+html[data-nuc-wallpaper="none"] .bd .bd__orbit,
+html[data-nuc-wallpaper="none"] .bd .bd__dust,
+html[data-nuc-wallpaper="none"] .bd .bd__grid,
+html[data-nuc-wallpaper="aurora"] .bd .bd__dust,
+html[data-nuc-wallpaper="aurora"] .bd .bd__grid,
+html[data-nuc-wallpaper="grid"] .bd .bd__orbit,
+html[data-nuc-wallpaper="grid"] .bd .bd__dust,
+html[data-nuc-wallpaper="dust"] .bd .bd__grid { display: none; }
+html[data-nuc-wallpaper="dust"] .bd .bd__dust { display: block; }
+</style>

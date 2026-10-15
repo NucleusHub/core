@@ -1,4 +1,5 @@
 import { ref, computed } from 'vue'
+import { startAppearance } from './useAppearance.js'
 
 const THEME_KEY = 'nucleus-theme'
 
@@ -34,6 +35,14 @@ function setTheme(val) {
   setCookie(THEME_KEY, val)
   applyDarkClass()
 }
+
+function setDefaultTheme(val) {
+  if (getCookie(THEME_KEY) || theme.value === val) return
+  theme.value = val
+  applyDarkClass()
+}
+
+startAppearance({ theme: { fallback: setDefaultTheme, reset: setTheme } })
 
 export function useTheme() {
   return { theme, isDark, setTheme }

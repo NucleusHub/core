@@ -441,7 +441,7 @@ async function createProfile() {
 
       <Transition name="nid-fade">
         <div v-if="selected" class="ps-step" @click.self="closeStep">
-          <div class="nid-card nid-card--narrow nid-rise ps-step__card" ref="stepCard"
+          <div class="nid-card nid-card--narrow nid-rise ps-step__card nuc-surface-dark" ref="stepCard"
             role="dialog" aria-modal="true" :aria-label="selected.name">
             <button type="button" class="nid-icon-btn ps-step__corner" :aria-label="pinOnly ? t('core.button.close') : t('core.profiles.allProfiles')"
               :title="pinOnly ? t('core.button.close') : t('core.profiles.allProfiles')" @click="closeStep">
@@ -495,7 +495,7 @@ async function createProfile() {
 
       <Transition name="nid-fade">
         <div v-if="creating" class="ps-step" @click.self="creating = false">
-          <form class="nid-card nid-card--narrow nid-rise ps-step__card" role="dialog" aria-modal="true" :aria-label="t('core.profiles.newProfile')"
+          <form class="nid-card nid-card--narrow nid-rise ps-step__card nuc-surface-dark" role="dialog" aria-modal="true" :aria-label="t('core.profiles.newProfile')"
             novalidate @submit.prevent="createProfile">
             <button type="button" class="nid-icon-btn ps-step__corner" :aria-label="t('core.button.close')" @click="creating = false">
               <CloseIcon class="nid-x" />

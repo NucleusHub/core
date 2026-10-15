@@ -1,7 +1,6 @@
 <script setup>
 import { ref, watch, onUnmounted, computed } from 'vue'
-import logoDark from './assets/nucleus-logo-transparent.png'
-import logoLight from './assets/nucleus-logo-light-1.png'
+import logoUrl from './assets/nucleus-mark.svg?url'
 import { useRegistry } from './useRegistry.js'
 import { useTheme } from './useTheme.js'
 import { useI18n } from './useI18n.js'
@@ -44,7 +43,6 @@ const THEMES = [
 ]
 
 const { theme, isDark, setTheme } = useTheme()
-const logoUrl = computed(() => isDark.value ? logoDark : logoLight)
 
 const { profile, account, openAccountPanel } = useAuth()
 const showSwitch = ref(false)
